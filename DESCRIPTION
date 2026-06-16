@@ -12,3 +12,6 @@ Imports:
     reticulate
 URL: https://github.com/vishakagopalan/kstitch
 BugReports: https://github.com/vishakagopalan/kstitch/issues
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
