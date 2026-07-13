@@ -32,7 +32,7 @@
 #'       \code{corr.Y.yscores}.}
 #'   }
 #' @export
-arun_cca <- function(X, Y, scale = TRUE, tol = 1e-8) {
+run_cca <- function(X, Y, scale = TRUE, tol = 1e-8) {
   X <- as.matrix(X)
   Y <- as.matrix(Y)
 
