@@ -117,8 +117,8 @@ cca_pvalues <- function(X, Y,
       if (uu <= eps || vv <= eps) break
 
       # rank-1 deflation: remove the projection of u (v) from Xk (Yk)
-      Xk <- Xk - tcrossprod(u, crossprod(u, Xk) / uu)
-      Yk <- Yk - tcrossprod(v, crossprod(v, Yk) / vv)
+      Xk <- Xk - outer(u, as.vector(crossprod(u, Xk) / uu))
+      Yk <- Yk - outer(v, as.vector(crossprod(v, Yk) / vv))
     }
 
     cancors

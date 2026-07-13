@@ -35,10 +35,23 @@ skipped with a message. Default 100.}
 \item{scale}{Logical. Whether to z-score both matrices before CCA.
 Default \code{TRUE}.}
 
-\item{test_significance}{Logical. Reserved for PR #3 (deflation-based
-permutation p-values). Currently ignored with a message if \code{TRUE}.}
+\item{test_significance}{Logical. Whether to compute deflation-based
+permutation p-values via \code{\link{cca_pvalues}} for each group.
+Default \code{FALSE}.}
 
 \item{verbose}{Logical. Print progress messages. Default \code{FALSE}.}
+
+\item{nperm}{Integer. Number of permutations passed to \code{cca_pvalues}
+when \code{test_significance = TRUE}. Default 1000L.}
+
+\item{perm_seed}{Optional integer seed for reproducibility of permutations.}
+
+\item{prioritize}{Logical. Whether to run \code{\link{prioritize_cca_components}}
+after anchoring signs. Results stored under \code{Priority_Info} in each
+group's output. Default \code{TRUE}.}
+
+\item{ccs_to_prioritize}{Integer vector. Components passed to
+\code{\link{prioritize_cca_components}}. Defaults to all components.}
 }
 \value{
 A named list, one element per group, each containing:

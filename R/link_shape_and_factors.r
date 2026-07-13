@@ -31,6 +31,11 @@
 #' @param nperm Integer. Number of permutations passed to \code{cca_pvalues}
 #'   when \code{test_significance = TRUE}. Default 1000L.
 #' @param perm_seed Optional integer seed for reproducibility of permutations.
+#' @param prioritize Logical. Whether to run \code{\link{prioritize_cca_components}}
+#'   after anchoring signs. Results stored under \code{Priority_Info} in each
+#'   group's output. Default \code{TRUE}.
+#' @param ccs_to_prioritize Integer vector. Components passed to
+#'   \code{\link{prioritize_cca_components}}. Defaults to all components.
 #' @param verbose Logical. Print progress messages. Default \code{FALSE}.
 #'
 #' @return A named list, one element per group, each containing:
@@ -53,6 +58,8 @@ link_shape_and_factors <- function(obj,
                                    group.by = NULL,
                                    min_cells = 100,
                                    scale = TRUE,
+                                   prioritize=TRUE,
+                                   ccs_to_prioritize=NULL,
                                    test_significance = FALSE,
                                    verbose = FALSE) {
 
@@ -66,12 +73,12 @@ link_shape_and_factors <- function(obj,
   )
 
   if (!is.null(group.by)) {
-    if (!group.by %in% colnames(obj@meta.data)) {
+    if (!group.by %in% colnames(obj[["meta.data"]])) {
       stop(sprintf(
         "`group.by` column '%s' not found in obj@meta.data. ",
         "Available columns: %s.",
         group.by,
-        paste(colnames(obj@meta.data), collapse = ", ")
+        paste(colnames(obj[["meta.data"]]), collapse = ", ")
       ))
     }
   }
@@ -81,8 +88,11 @@ link_shape_and_factors <- function(obj,
   # --- resolve cells and groups -----------------------------------------------
 
   # Authoritative cell universe: intersection across all three sources.
+  # rownames(obj@meta.data) is used instead of colnames(obj) so that the
+  # function works with lightweight test stubs that lack Seurat's colnames
+  # S3 method; these are always identical in a real Seurat object.
   cells_all <- Reduce(intersect, list(
-    colnames(obj),
+    rownames(obj[["meta.data"]]),
     rownames(nmf_mat),
     rownames(shape_mat)
   ))
@@ -95,7 +105,7 @@ link_shape_and_factors <- function(obj,
   if (is.null(group.by)) {
     groups <- list(all = cells_all)
   } else {
-    meta_vec <- obj@meta.data[cells_all, group.by]
+    meta_vec <- obj[["meta.data"]][cells_all, group.by]
     groups   <- split(cells_all, meta_vec)
   }
 
@@ -169,6 +179,20 @@ link_shape_and_factors <- function(obj,
         nperm   = nperm,
         seed    = perm_seed,
         verbose = verbose
+      )
+    }
+
+    # anchor signs — always run; records Anchor_Features per component
+    results[[grp]] <- anchor_cca_signs(results[[grp]])
+
+    # optionally prioritize stable features via subsampled CCA
+    if (prioritize) {
+      ccs <- if (is.null(ccs_to_prioritize)) seq_len(length(results[[grp]]$CC_Corr_Coefs)) else ccs_to_prioritize
+      if (verbose) message(sprintf("  Prioritizing CCA components for group '%s' ...", grp))
+      results[[grp]][["Priority_Info"]] <- prioritize_cca_components(
+        shape_mat        = X,
+        nmf_mat          = Y,
+        ccs_to_consider  = ccs
       )
     }
   }

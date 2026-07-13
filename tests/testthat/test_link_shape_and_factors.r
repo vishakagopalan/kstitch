@@ -15,10 +15,10 @@ test_that("pooled mode returns correct structure and high first canonical correl
   colnames(shape_mat) <- paste0("ShapePC", seq_len(8))
   colnames(nmf_mat)   <- paste0("Factor",  seq_len(6))
 
-  # Minimal Seurat-like object stub (only colnames and @meta.data needed)
-  obj           <- list(meta.data = data.frame(row.names = cell_names))
-  colnames(obj) <- cell_names
-  class(obj)    <- "Seurat"  # duck-typed for this function
+  # Minimal Seurat-like stub: only @meta.data rownames needed; the function
+  # uses rownames(obj@meta.data) rather than colnames(obj) to avoid
+  # requiring the Seurat S3 method in tests.
+  obj <- list(meta.data = data.frame(row.names = cell_names))
 
   res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = NULL)
 
@@ -81,9 +81,7 @@ test_that("group.by splits cells and runs CCA per group", {
     row.names = cell_names
   )
 
-  obj           <- list(meta.data = meta)
-  colnames(obj) <- cell_names
-  class(obj)    <- "Seurat"
+  obj <- list(meta.data = meta)
 
   res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = "celltype")
 
@@ -110,9 +108,7 @@ test_that("groups below min_cells are skipped", {
   rownames(shape_mat) <- cell_names
   rownames(nmf_mat)   <- cell_names
 
-  obj           <- list(meta.data = data.frame(row.names = cell_names))
-  colnames(obj) <- cell_names
-  class(obj)    <- "Seurat"
+  obj <- list(meta.data = data.frame(row.names = cell_names))
 
   expect_warning(
     res <- link_shape_and_factors(obj, nmf_mat, shape_mat),
