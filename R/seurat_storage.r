@@ -5,10 +5,7 @@
 #' \enumerate{
 #'   \item CSP and CEP scores are assembled across groups into object-spanning
 #'     \code{DimReduc} slots (\code{obj[["csp"]]} and \code{obj[["cep"]]}).
-#'     Because each cell belongs to exactly one group, per-group score rows
-#'     tile the object without overlap.
-#'   \item All other per-group fit information (canonical vectors, correlations,
-#'     anchor features, priority info, p-values if present) is written to
+#'   \item All other per-group fit information is written to
 #'     \code{obj@misc$kstitch[[group_level]]}.
 #' }
 #'
@@ -29,12 +26,9 @@ store_kstitch_results <- function(obj,
                                   reduction_key_csp = "CSP_",
                                   reduction_key_cep = "CEP_") {
 
-  all_cells <- rownames(obj[["meta.data"]])
+  all_cells <- rownames(obj@meta.data)
+  k         <- ncol(results[[1]]$CSP_Scores)
 
-  # --- determine k (number of components) from first group -------------------
-  k <- ncol(results[[1]]$CSP_Scores)
-
-  # --- assemble object-spanning score matrices --------------------------------
   csp_mat <- matrix(NA_real_, nrow = length(all_cells), ncol = k,
                     dimnames = list(all_cells, paste0("CSP", seq_len(k))))
   cep_mat <- matrix(NA_real_, nrow = length(all_cells), ncol = k,
@@ -51,7 +45,6 @@ store_kstitch_results <- function(obj,
             "These cells were not present in any group in `results`.")
   }
 
-  # --- create DimReduc objects ------------------------------------------------
   obj[["csp"]] <- Seurat::CreateDimReducObject(
     embeddings = csp_mat,
     key        = reduction_key_csp,
@@ -64,13 +57,12 @@ store_kstitch_results <- function(obj,
     assay      = Seurat::DefaultAssay(obj)
   )
 
-  # --- write per-group fit objects to @misc -----------------------------------
-  if (is.null(obj[["misc"]][["kstitch"]])) obj[["misc"]][["kstitch"]] <- list()
+  if (is.null(obj@misc$kstitch)) obj@misc$kstitch <- list()
 
   score_fields <- c("CSP_Scores", "CEP_Scores")
 
   for (grp in names(results)) {
-    obj[["misc"]][["kstitch"]][[grp]] <- results[[grp]][
+    obj@misc$kstitch[[grp]] <- results[[grp]][
       setdiff(names(results[[grp]]), score_fields)
     ]
   }
@@ -95,19 +87,19 @@ store_kstitch_results <- function(obj,
 #' @export
 get_kstitch_results <- function(obj, group = NULL) {
 
-  if (is.null(obj[["misc"]][["kstitch"]])) {
+  if (is.null(obj@misc$kstitch)) {
     stop("No kstitch results found in obj@misc. Run store_kstitch_results() first.")
   }
 
-  if (is.null(group)) return(obj[["misc"]][["kstitch"]])
+  if (is.null(group)) return(obj@misc$kstitch)
 
-  if (!group %in% names(obj[["misc"]][["kstitch"]])) {
+  if (!group %in% names(obj@misc$kstitch)) {
     stop(sprintf(
       "Group '%s' not found in obj@misc$kstitch. Available groups: %s.",
       group,
-      paste(names(obj[["misc"]][["kstitch"]]), collapse = ", ")
+      paste(names(obj@misc$kstitch), collapse = ", ")
     ))
   }
 
-  obj[["misc"]][["kstitch"]][[group]]
+  obj@misc$kstitch[[group]]
 }

@@ -47,6 +47,7 @@
 #'     \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
 #'     \item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
 #'     \item{CEP_Self_Correlations}{Structure correlations of NMF factors with CEP scores.}
+#'     \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 #'     \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 #'   }
 #'
@@ -58,9 +59,11 @@ link_shape_and_factors <- function(obj,
                                    group.by = NULL,
                                    min_cells = 100,
                                    scale = TRUE,
-                                   prioritize=TRUE,
-                                   ccs_to_prioritize=NULL,
                                    test_significance = FALSE,
+                                   nperm = 1000L,
+                                   perm_seed = NULL,
+                                   prioritize = TRUE,
+                                   ccs_to_prioritize = NULL,
                                    verbose = FALSE) {
 
   # --- input checks -----------------------------------------------------------
@@ -73,39 +76,32 @@ link_shape_and_factors <- function(obj,
   )
 
   if (!is.null(group.by)) {
-    if (!group.by %in% colnames(obj[["meta.data"]])) {
+    if (!group.by %in% colnames(obj@meta.data)) {
       stop(sprintf(
-        "`group.by` column '%s' not found in obj@meta.data. ",
-        "Available columns: %s.",
+        "`group.by` column '%s' not found in obj@meta.data. Available columns: %s.",
         group.by,
-        paste(colnames(obj[["meta.data"]]), collapse = ", ")
+        paste(colnames(obj@meta.data), collapse = ", ")
       ))
     }
   }
 
-
-
   # --- resolve cells and groups -----------------------------------------------
 
-  # Authoritative cell universe: intersection across all three sources.
-  # rownames(obj@meta.data) is used instead of colnames(obj) so that the
-  # function works with lightweight test stubs that lack Seurat's colnames
-  # S3 method; these are always identical in a real Seurat object.
   cells_all <- Reduce(intersect, list(
-    rownames(obj[["meta.data"]]),
+    rownames(obj@meta.data),
     rownames(nmf_mat),
     rownames(shape_mat)
   ))
 
   if (length(cells_all) == 0) {
-    stop("No cells remain after intersecting colnames(obj), rownames(nmf_mat), ",
+    stop("No cells remain after intersecting rownames(obj@meta.data), rownames(nmf_mat), ",
          "and rownames(shape_mat). Check that row names match Seurat cell names.")
   }
 
   if (is.null(group.by)) {
     groups <- list(all = cells_all)
   } else {
-    meta_vec <- obj[["meta.data"]][cells_all, group.by]
+    meta_vec <- obj@meta.data[cells_all, group.by]
     groups   <- split(cells_all, meta_vec)
   }
 
@@ -128,19 +124,18 @@ link_shape_and_factors <- function(obj,
 
     if (verbose) message(sprintf("Running CCA for group '%s' (%d cells).", grp, n))
 
-    X <- shape_mat[cells, , drop = FALSE]   # shape  (cells x shape features)
-    Y <- nmf_mat[cells,   , drop = FALSE]   # expression (cells x NMF factors)
+    X <- shape_mat[cells, , drop = FALSE]
+    Y <- nmf_mat[cells,   , drop = FALSE]
 
     if (scale) {
       X <- scale(X)
       Y <- scale(Y)
     }
 
-    cca <- run_cca(X, Y, scale = FALSE)     # already scaled above if requested
+    cca <- run_cca(X, Y, scale = FALSE)
 
     k <- length(cca$cor)
 
-    # CSP = shape canonical variates (xscores)
     csp_scores <- cca$scores$xscores
     colnames(csp_scores) <- paste0("CSP", seq_len(k))
     rownames(csp_scores) <- cells
@@ -148,7 +143,6 @@ link_shape_and_factors <- function(obj,
     csp_vectors <- cca$xcoef
     colnames(csp_vectors) <- paste0("CSP", seq_len(k))
 
-    # CEP = expression canonical variates (yscores)
     cep_scores <- cca$scores$yscores
     colnames(cep_scores) <- paste0("CEP", seq_len(k))
     rownames(cep_scores) <- cells
@@ -156,19 +150,18 @@ link_shape_and_factors <- function(obj,
     cep_vectors <- cca$ycoef
     colnames(cep_vectors) <- paste0("CEP", seq_len(k))
 
-    # Structure correlations (read before any modification of cca$scores)
     csp_self_cor <- cca$scores$corr.X.xscores
     cep_self_cor <- cca$scores$corr.Y.yscores
 
     results[[grp]] <- list(
-      CC_Corr_Coefs        = cca$cor,
-      CSP_Scores           = csp_scores,
-      CEP_Scores           = cep_scores,
-      CSP_Vectors          = csp_vectors,
-      CEP_Vectors          = cep_vectors,
+      CC_Corr_Coefs         = cca$cor,
+      CSP_Scores            = csp_scores,
+      CEP_Scores            = cep_scores,
+      CSP_Vectors           = csp_vectors,
+      CEP_Vectors           = cep_vectors,
       CSP_Self_Correlations = csp_self_cor,
       CEP_Self_Correlations = cep_self_cor,
-      Misc_CCA             = cca
+      Misc_CCA              = cca
     )
 
     if (test_significance) {
@@ -182,17 +175,17 @@ link_shape_and_factors <- function(obj,
       )
     }
 
-    # anchor signs — always run; records Anchor_Features per component
+    # anchor signs
     results[[grp]] <- anchor_cca_signs(results[[grp]])
 
-    # optionally prioritize stable features via subsampled CCA
+    # optionally prioritize stable features
     if (prioritize) {
       ccs <- if (is.null(ccs_to_prioritize)) seq_len(length(results[[grp]]$CC_Corr_Coefs)) else ccs_to_prioritize
       if (verbose) message(sprintf("  Prioritizing CCA components for group '%s' ...", grp))
       results[[grp]][["Priority_Info"]] <- prioritize_cca_components(
-        shape_mat        = X,
-        nmf_mat          = Y,
-        ccs_to_consider  = ccs
+        shape_mat       = X,
+        nmf_mat         = Y,
+        ccs_to_consider = ccs
       )
     }
   }
