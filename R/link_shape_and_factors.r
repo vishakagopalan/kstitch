@@ -25,8 +25,12 @@
 #'   skipped with a message. Default 100.
 #' @param scale Logical. Whether to z-score both matrices before CCA.
 #'   Default \code{TRUE}.
-#' @param test_significance Logical. Reserved for PR #3 (deflation-based
-#'   permutation p-values). Currently ignored with a message if \code{TRUE}.
+#' @param test_significance Logical. Whether to compute deflation-based
+#'   permutation p-values via \code{\link{cca_pvalues}} for each group.
+#'   Default \code{FALSE}.
+#' @param nperm Integer. Number of permutations passed to \code{cca_pvalues}
+#'   when \code{test_significance = TRUE}. Default 1000L.
+#' @param perm_seed Optional integer seed for reproducibility of permutations.
 #' @param verbose Logical. Print progress messages. Default \code{FALSE}.
 #'
 #' @return A named list, one element per group, each containing:
@@ -72,11 +76,7 @@ link_shape_and_factors <- function(obj,
     }
   }
 
-  if (test_significance) {
-    message("`test_significance` is not yet implemented; it will be wired up ",
-            "in PR #3 (deflation-based permutation p-values). Proceeding without.")
-    test_significance <- FALSE
-  }
+
 
   # --- resolve cells and groups -----------------------------------------------
 
@@ -160,6 +160,17 @@ link_shape_and_factors <- function(obj,
       CEP_Self_Correlations = cep_self_cor,
       Misc_CCA             = cca
     )
+
+    if (test_significance) {
+      if (verbose) message(sprintf("  Computing permutation p-values for group '%s' (%d perms) ...", grp, nperm))
+      results[[grp]][["P_Value_Info"]] <- cca_pvalues(
+        X       = X,
+        Y       = Y,
+        nperm   = nperm,
+        seed    = perm_seed,
+        verbose = verbose
+      )
+    }
   }
 
   if (length(results) == 0) {
