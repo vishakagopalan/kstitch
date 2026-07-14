@@ -36,7 +36,6 @@ plot_shape_modes <- function(tpca_result,
     num_pcs  = as.integer(num_pcs)
   )
   df  <- as.data.frame(lapply(raw, as.vector))
-  return(df)
 
   variances   <- info$variances
   pct_var     <- round(100 * variances / sum(variances), 2)
