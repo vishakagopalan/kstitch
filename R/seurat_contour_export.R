@@ -51,7 +51,7 @@ export_seurat_contours <- function(obj,
   pga_py_dir <- system.file("python", package = "kstitch")
   if (!nzchar(pga_py_dir))
     stop("Could not locate inst/python/ inside the kstitch package.")
-  pga <- reticulate::import_from_path("PGA", path = pga_py_dir)
+  kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = pga_py_dir)
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -59,7 +59,7 @@ export_seurat_contours <- function(obj,
 
   # ── 4. Pre-shape embedding (in-memory, no parquet) ───────────────────────────
   message("Computing pre-shape embedding ...")
-  pga$compute_pre_shape_embedding(
+  kendall_tpca$compute_pre_shape_embedding(
     pre_shape_output_dir   = output_dir,
     df                     = reticulate::r_to_py(df),
     num_vertices_to_sample = as.integer(num_vertices),
@@ -71,7 +71,7 @@ export_seurat_contours <- function(obj,
 
   # ── 5. TPCA ──────────────────────────────────────────────────────────────────
   message("Running TPCA ...")
-  pga$run_pga(
+  kendall_tpca$run_kendall_tpca(
     pre_shape_input_dir   = output_dir,
     pga_output_dir        = output_dir,
     cell_ids_to_analyze   = py_cell_ids,
@@ -84,8 +84,8 @@ export_seurat_contours <- function(obj,
   )
 
   # ── 6. Read outputs from disk ─────────────────────────────────────────────
-  message("Reading PGA results ...")
-  result              <- .load_pga_output(output_dir)
+  message("Reading TPCA results ...")
+  result              <- .load_kendall_tpca_output(output_dir)
   result$contour_type <- contour_type
   result$output_dir   <- output_dir
   result

@@ -46,7 +46,7 @@ make_tpca_result_fig <- function(cell_names, L = 50, k = 8,
   } else NULL
 
   list(
-    PGA_Embedding = emb,
+    TPCA_Embedding = emb,
     Info = list(
       variances      = sort(runif(k, 0.5, 5), decreasing = TRUE),
       v_matrix       = matrix(rnorm(2 * L * k), 2 * L, k),

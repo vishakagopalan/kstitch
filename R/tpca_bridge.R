@@ -6,39 +6,39 @@
 # ---- private helpers --------------------------------------------------------
 
 #' @noRd
-.load_pga_output <- function(output_dir) {
+.load_kendall_tpca_output <- function(output_dir) {
 
-  pga_path       <- file.path(output_dir, "PGA_Info.h5")
+  kendall_tpca_path       <- file.path(output_dir, "TPCA_Info.h5")
   meta_path      <- file.path(output_dir, "Shape_Metadata.csv.gz")
   pre_shape_path <- file.path(output_dir, "Pre_Shape_Space_Embedding.h5")
 
-  if (!file.exists(pga_path))
-    stop(sprintf("PGA_Info.h5 not found in '%s'. Has run_pga() completed?", output_dir))
+  if (!file.exists(kendall_tpca_path))
+    stop(sprintf("TPCA_Info.h5 not found in '%s'. Has run_kendall_tpca() completed?", output_dir))
   if (!file.exists(meta_path))
     stop(sprintf("Shape_Metadata.csv.gz not found in '%s'.", output_dir))
 
-  pga_mat      <- t(rhdf5::h5read(pga_path, name = "embedding"))
-  pga_idxes    <- rhdf5::h5read(pga_path, name = "processed_idxes")
-  frechet_mean <- rhdf5::h5read(pga_path, name = "frechet_mean")
-  v_matrix     <- rhdf5::h5read(pga_path, name = "v_matrix")
-  variances    <- rhdf5::h5read(pga_path, name = "variances")
+  kendall_tpca_mat      <- t(rhdf5::h5read(kendall_tpca_path, name = "embedding"))
+  kendall_tpca_idxes    <- rhdf5::h5read(kendall_tpca_path, name = "processed_idxes")
+  frechet_mean <- rhdf5::h5read(kendall_tpca_path, name = "frechet_mean")
+  v_matrix     <- rhdf5::h5read(kendall_tpca_path, name = "v_matrix")
+  variances    <- rhdf5::h5read(kendall_tpca_path, name = "variances")
 
-  dimnames(pga_mat) <- list(
-    as.character(pga_idxes),
-    paste0("Shape_PC", seq_len(ncol(pga_mat)))
+  dimnames(kendall_tpca_mat) <- list(
+    as.character(kendall_tpca_idxes),
+    paste0("Shape_PC", seq_len(ncol(kendall_tpca_mat)))
   )
 
   meta <- data.table::fread(meta_path)
   meta <- meta[, c("numpy_idx", "cell_id"), with = FALSE]
   meta[, numpy_idx := as.character(numpy_idx)]
 
-  pga_df <- as.data.frame(pga_mat) |>
+  kendall_tpca_df <- as.data.frame(kendall_tpca_mat) |>
     tibble::rownames_to_column("numpy_idx") |>
     merge(meta, by = "numpy_idx") |>
     dplyr::select(-numpy_idx) |>
     tibble::column_to_rownames("cell_id")
 
-  pga_mat <- as.matrix(pga_df)
+  kendall_tpca_mat <- as.matrix(kendall_tpca_df)
 
   pre_shape <- NULL
   if (file.exists(pre_shape_path)) {
@@ -47,7 +47,7 @@
   }
 
   list(
-    PGA_Embedding = pga_mat,
+    TPCA_Embedding = kendall_tpca_mat,
     Info = list(
       variances           = variances,
       v_matrix            = v_matrix,
@@ -61,8 +61,8 @@
 
 #' Run Tangent PCA on cell or nucleus boundary contours
 #'
-#' Calls \code{compute_pre_shape_embedding()} and \code{run_pga()} from
-#' \code{PGA.py} via reticulate, then reads the results back into R.
+#' Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()} from
+#' \code{kendall_tpca.py} via reticulate, then reads the results back into R.
 #'
 #' @param boundary_parquet_path Path to a parquet file containing boundary
 #'   coordinates.
@@ -83,7 +83,7 @@
 #' @param frechet_mean_tol Convergence tolerance. Default 1e-4.
 #' @param max_frechet_iter Maximum iterations. Default 1000L.
 #'
-#' @return A list with \code{PGA_Embedding}, \code{Info}, \code{contour_type},
+#' @return A list with \code{TPCA_Embedding}, \code{Info}, \code{contour_type},
 #'   and \code{output_dir}.
 #' @seealso \code{\link{store_tpca_results}}
 #' @export
@@ -106,11 +106,11 @@ run_tpca <- function(boundary_parquet_path,
   if (!file.exists(boundary_parquet_path))
     stop(sprintf("boundary_parquet_path '%s' does not exist.", boundary_parquet_path))
 
-  pga_py_dir <- system.file("python", package = "kstitch")
-  if (!nzchar(pga_py_dir))
+  kendall_tpca_py_dir <- system.file("python", package = "kstitch")
+  if (!nzchar(kendall_tpca_py_dir))
     stop("Could not locate inst/python/ inside the kstitch package.")
 
-  pga <- reticulate::import_from_path("PGA", path = pga_py_dir)
+  kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -118,7 +118,7 @@ run_tpca <- function(boundary_parquet_path,
     reticulate::r_to_py(as.list(cell_ids)) else NULL
 
   message("Computing pre-shape embedding ...")
-  pga$compute_pre_shape_embedding(
+  kendall_tpca$compute_pre_shape_embedding(
     boundary_parquet_path  = boundary_parquet_path,
     pre_shape_output_dir   = output_dir,
     num_vertices_to_sample = as.integer(num_vertices),
@@ -128,10 +128,10 @@ run_tpca <- function(boundary_parquet_path,
     cell_id_col            = cell_id_col
   )
 
-  message("Running PGA ...")
-  pga$run_pga(
+  message("Running TPCA ...")
+  kendall_tpca$run_kendall_tpca(
     pre_shape_input_dir   = output_dir,
-    pga_output_dir        = output_dir,
+    kendall_tpca_output_dir        = output_dir,
     cell_ids_to_analyze   = py_cell_ids,
     cell_id_col           = cell_id_col,
     max_frechet_mean_iter = as.integer(max_frechet_iter),
@@ -141,8 +141,8 @@ run_tpca <- function(boundary_parquet_path,
     frechet_mean_tol      = frechet_mean_tol
   )
 
-  message("Reading PGA results ...")
-  result              <- .load_pga_output(output_dir)
+  message("Reading TPCA results ...")
+  result              <- .load_kendall_tpca_output(output_dir)
   result$contour_type <- contour_type
   result$output_dir   <- output_dir
 
@@ -152,7 +152,7 @@ run_tpca <- function(boundary_parquet_path,
 
 #' Store TPCA results in a Seurat object
 #'
-#' Writes the PGA embedding as a \code{DimReduc} slot and fit metadata to
+#' Writes the TPCA embedding as a \code{DimReduc} slot and fit metadata to
 #' \code{obj@misc$kstitch$tpca[[contour_type]]}.
 #'
 #' @param obj A Seurat v5 object.
@@ -170,7 +170,7 @@ store_tpca_results <- function(obj,
   contour_type   <- tpca_result$contour_type
   reduction_name <- paste0("tpca_", contour_type)
 
-  emb       <- tpca_result$PGA_Embedding
+  emb       <- tpca_result$TPCA_Embedding
   obj_cells <- rownames(obj@meta.data)
   missing   <- setdiff(obj_cells, rownames(emb))
 

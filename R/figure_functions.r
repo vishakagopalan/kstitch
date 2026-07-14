@@ -6,7 +6,7 @@
 #' component at a range of standard deviation values, producing a PC x SD
 #' faceted grid.
 #'
-#' Calls \code{reconstruct_shapes_from_pca()} from \code{PGA.py} via
+#' Calls \code{reconstruct_shapes_from_pca()} from \code{kendall_tpca.py} via
 #' reticulate.
 #'
 #' @param tpca_result The list returned by \code{\link{run_tpca}}.
@@ -25,10 +25,10 @@ plot_shape_modes <- function(tpca_result,
 
   info <- tpca_result$Info
 
-  pga_py_dir <- system.file("python", package = "kstitch")
-  pga        <- reticulate::import_from_path("PGA", path = pga_py_dir)
+  kendall_tpca_py_dir <- system.file("python", package = "kstitch")
+  kendall_tpca        <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
-  raw <- pga$reconstruct_shapes_from_pca(
+  raw <- kendall_tpca$reconstruct_shapes_from_pca(
     v        = t(info$v_matrix),
     mu       = t(info$frechet_mean),
     lambdas  = info$variances,
@@ -170,7 +170,7 @@ plot_csp_loadings <- function(group_result,
 #' Plot CSP-binned cell boundary montage
 #'
 #' Bins cells by their CSP score into deciles, selects bin medoids (cells with
-#' smallest mean pairwise PGA distance), Procrustes-aligns their contours to
+#' smallest mean pairwise TPCA distance), Procrustes-aligns their contours to
 #' the Fréchet mean, and plots them as a montage faceted by bin.
 #'
 #' When \code{area_rescale = TRUE} (default), normalised contours are rescaled
@@ -210,13 +210,13 @@ plot_csp_boundary_montage <- function(group_result,
                                       reconstruction_pcs = NULL,
                                       line_colour        = "steelblue") {
 
-  pga_py_dir <- system.file("python", package = "kstitch")
-  pga        <- reticulate::import_from_path("PGA", path = pga_py_dir)
+  kendall_tpca_py_dir <- system.file("python", package = "kstitch")
+  kendall_tpca        <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   info        <- tpca_result$Info
   mean_shape  <- t(info$frechet_mean)   # 2 x L
   emb         <- group_result$CSP_Scores
-  shape_emb   <- tpca_result$PGA_Embedding
+  shape_emb   <- tpca_result$TPCA_Embedding
 
   pre_shape   <- info$pre_shape_embedding   # cells x 2 x L, or NULL
   use_reconstruction <- is.null(pre_shape)
@@ -265,7 +265,7 @@ plot_csp_boundary_montage <- function(group_result,
     cells_in_bin <- dplyr::filter(bin_df, bin == bin_)[["cell"]]
     if (length(cells_in_bin) < 1L) next
 
-    # medoid selection: smallest mean pairwise PGA distance
+    # medoid selection: smallest mean pairwise TPCA distance
     sub_emb  <- shape_emb[cells_in_bin, pcs_to_use, drop = FALSE]
     dist_mat <- as.matrix(dist(sub_emb))
     mean_dist <- colMeans(dist_mat)
@@ -278,7 +278,7 @@ plot_csp_boundary_montage <- function(group_result,
       # get contour coordinates
       if (use_reconstruction) {
         pca_coords <- shape_emb[cell, seq_len(k_rec)]
-        shape_mat  <- pga$reconstruct_shape_from_pca_coords(
+        shape_mat  <- kendall_tpca$reconstruct_shape_from_pca_coords(
           pca_coords = reticulate::r_to_py(as.numeric(pca_coords)),
           v          = t(info$v_matrix),
           mu         = t(info$frechet_mean),
@@ -293,7 +293,7 @@ plot_csp_boundary_montage <- function(group_result,
       }
 
       # Procrustes-align to Fréchet mean
-      rotated <- t(pga$reparam_OPA(t(mat), mean_shape))   # L x 2
+      rotated <- t(kendall_tpca$reparam_OPA(t(mat), mean_shape))   # L x 2
 
       # area rescaling
       if (area_rescale && !is.null(meta)) {

@@ -22,8 +22,8 @@ library(dplyr)
 input_files <- list(
   xenium_obj      = "~/Downloads/Temp_Keratinocyte_Object.rds",
   nmf_output      = "~/Downloads/Temp_Melanoma_NMF.rds",
-  pga_embedding   = "~/Downloads/Temp_Melanoma_PGA_Out.rds",
-  pga_info        = "~/Downloads/Temp_Melanoma_PGA_Info.rds",
+  tpca_embedding   = "~/Downloads/Temp_Melanoma_PGA_Out.rds",
+  tpca_info        = "~/Downloads/Temp_Melanoma_PGA_Info.rds",
   cca_cell        = "~/Downloads/Temp_Melanoma_CCA_Cells.rds",
   cca_nucleus     = "~/Downloads/Temp_Melanoma_CCA_Nuclei.rds"
 )
@@ -39,8 +39,8 @@ for (name in names(input_files)) {
 cat("Loading input data...\n")
 xenium_obj              <- readRDS(input_files$xenium_obj)
 nmf_output              <- readRDS(input_files$nmf_output)
-pga_embedding_list      <- readRDS(input_files$pga_embedding)
-pga_info_list           <- readRDS(input_files$pga_info)
+tpca_embedding_list      <- readRDS(input_files$tpca_embedding)
+tpca_info_list           <- readRDS(input_files$tpca_info)
 cca_cell_output         <- readRDS(input_files$cca_cell)
 cca_nucleus_output      <- readRDS(input_files$cca_nucleus)
 
@@ -52,11 +52,11 @@ cat(sprintf("Starting with: %d cells\n", ncol(obj)))
 # ---- 2. Store TPCA results (Cell) -------------------------------------------
 
 tpca_cell <- list(
-  PGA_Embedding = pga_embedding_list$Cell$Keratinocytes,
+  TPCA_Embedding = tpca_embedding_list$Cell$Keratinocytes,
   Info = list(
-    variances           = pga_info_list$Cell$Keratinocytes$variances,
-    v_matrix            = pga_info_list$Cell$Keratinocytes$v_matrix,
-    frechet_mean        = pga_info_list$Cell$Keratinocytes$frechet_mean,
+    variances           = tpca_info_list$Cell$Keratinocytes$variances,
+    v_matrix            = tpca_info_list$Cell$Keratinocytes$v_matrix,
+    frechet_mean        = tpca_info_list$Cell$Keratinocytes$frechet_mean,
     pre_shape_embedding = NULL   # not shipped to keep file size small
   ),
   contour_type = "cell",
@@ -70,11 +70,11 @@ cat(sprintf("TPCA cell stored: %d cells with embeddings\n",
 # ---- 3. Store TPCA results (Nucleus) ----------------------------------------
 
 tpca_nucleus <- list(
-  PGA_Embedding = pga_embedding_list$Nucleus$Keratinocytes,
+  TPCA_Embedding = tpca_embedding_list$Nucleus$Keratinocytes,
   Info = list(
-    variances           = pga_info_list$Nucleus$Keratinocytes$variances,
-    v_matrix            = pga_info_list$Nucleus$Keratinocytes$v_matrix,
-    frechet_mean        = pga_info_list$Nucleus$Keratinocytes$frechet_mean,
+    variances           = tpca_info_list$Nucleus$Keratinocytes$variances,
+    v_matrix            = tpca_info_list$Nucleus$Keratinocytes$v_matrix,
+    frechet_mean        = tpca_info_list$Nucleus$Keratinocytes$frechet_mean,
     pre_shape_embedding = NULL
   ),
   contour_type = "nucleus",
