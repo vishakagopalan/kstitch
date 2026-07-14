@@ -1,36 +1,17 @@
-#from tqdm import tqdm
 import numpy as np
 import os
-#import pyarrow
 import pyarrow.parquet as pq
-#import matplotlib
-#import pyarrow as pa
+import pyarrow as pa
 
-#import matplotlib.style as mplstyle
-#mplstyle.use('fast')
 
-# matplotlib.use('Agg')
-#import matplotlib.pyplot as plt
 import pandas as pd
-#import os
-#import scanpy as sc
 from multiprocess import Pool
 import h5py
 from itertools import repeat
-# import visvalingamwyatt as vw
-#import umap
-#import pickle
 
 import shapely
 import scipy
-# import fdasrsf
 
-#from matplotlib.lines import Line2D
-#from matplotlib.patches import Patch
-#import pyarrow.parquet as pq
-
-
-# import skfda
 def cell_features(x):
   x_copy = x.copy()
   mu = x_copy.mean(axis=1)
@@ -331,16 +312,25 @@ def project_onto_dataset(X,mu,v):
     U_flat_T = U.reshape(X.shape[0], 2*mu.shape[1])
     return (U_flat_T @ v)
 
-def compute_pre_shape_embedding( boundary_parquet_path,
-             pre_shape_output_dir,
-             num_vertices_to_sample=30,
-         cell_ids_to_analyze=None,
-             x_vertex_col="vertex_x", y_vertex_col="vertex_y",
-           cell_id_col="cell_id"):
-    
-    df_shapes = pq.read_table(boundary_parquet_path)
 
-    os.makedirs(pre_shape_output_dir,exist_ok=True)
+def compute_pre_shape_embedding(
+        pre_shape_output_dir,
+        boundary_parquet_path = None,
+        df                    = None,
+        num_vertices_to_sample = 30,
+        cell_ids_to_analyze    = None,
+        x_vertex_col           = "vertex_x",
+        y_vertex_col           = "vertex_y",
+        cell_id_col            = "cell_id"):
+
+    if df is not None:
+        df_shapes = pa.Table.from_pandas(df)
+    elif boundary_parquet_path is not None:
+        df_shapes = pq.read_table(boundary_parquet_path)
+    else:
+        raise ValueError("One of boundary_parquet_path or df must be provided.")
+
+    os.makedirs(pre_shape_output_dir, exist_ok=True)
     
     groups = df_shapes.group_by([cell_id_col]).aggregate(
         [(x_vertex_col,"list"),(y_vertex_col,"list")])
