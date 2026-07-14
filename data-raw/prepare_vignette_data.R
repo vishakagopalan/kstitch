@@ -54,9 +54,9 @@ cat(sprintf("Starting with: %d cells\n", ncol(obj)))
 tpca_cell <- list(
   PGA_Embedding = pga_embedding_list$Cell$Keratinocytes,
   Info = list(
-    variances           = pga_info_list$Cell$variances,
-    v_matrix            = pga_info_list$Cell$v_matrix,
-    frechet_mean        = pga_info_list$Cell$frechet_mean,
+    variances           = pga_info_list$Cell$Keratinocytes$variances,
+    v_matrix            = pga_info_list$Cell$Keratinocytes$v_matrix,
+    frechet_mean        = pga_info_list$Cell$Keratinocytes$frechet_mean,
     pre_shape_embedding = NULL   # not shipped to keep file size small
   ),
   contour_type = "cell",
@@ -72,9 +72,9 @@ cat(sprintf("TPCA cell stored: %d cells with embeddings\n",
 tpca_nucleus <- list(
   PGA_Embedding = pga_embedding_list$Nucleus$Keratinocytes,
   Info = list(
-    variances           = pga_info_list$Nucleus$variances,
-    v_matrix            = pga_info_list$Nucleus$v_matrix,
-    frechet_mean        = pga_info_list$Nucleus$frechet_mean,
+    variances           = pga_info_list$Nucleus$Keratinocytes$variances,
+    v_matrix            = pga_info_list$Nucleus$Keratinocytes$v_matrix,
+    frechet_mean        = pga_info_list$Nucleus$Keratinocytes$frechet_mean,
     pre_shape_embedding = NULL
   ),
   contour_type = "nucleus",
@@ -129,7 +129,7 @@ misc_cca_cell$scores$corr.X.yscores  <- old_cca_cell$Keratinocytes$Misc_CCA$scor
 misc_cca_cell$scores$corr.Y.xscores  <- old_cca_cell$Keratinocytes$Misc_CCA$scores$corr.Y.xscores
 
 cca_result_cell <- list(
-  CC_Corr_Coefs         = old_cca_cell$CC_Corr_Coefs,
+  CC_Corr_Coefs         = old_cca_cell$Keratinocytes$CC_Corr_Coefs,
   CSP_Scores            = csp_scores_cell,
   CEP_Scores            = cep_scores_cell,
   CSP_Vectors           = csp_vectors_cell,
@@ -145,9 +145,7 @@ if (!is.null(old_cca_cell$Keratinocytes$Prioritized_Variables)) {
 
 cca_result_cell <- anchor_cca_signs(cca_result_cell)
 
-obj@misc[["kstitch"]][["cell_cca"]] <- cca_result_cell[
-  setdiff(names(cca_result_cell), c("CSP_Scores", "CEP_Scores"))
-]
+obj@misc[["kstitch"]][["cell_cca"]] <- cca_result_cell
 
 cat(sprintf("CCA (cell) stored: %d canonical components\n", k_cell))
 
@@ -173,7 +171,7 @@ misc_cca_nuc$scores$corr.X.yscores  <- old_cca_nucleus$Keratinocytes$Misc_CCA$sc
 misc_cca_nuc$scores$corr.Y.xscores  <- old_cca_nucleus$Keratinocytes$Misc_CCA$scores$corr.Y.xscores
 
 cca_result_nuc <- list(
-  CC_Corr_Coefs         = old_cca_nucleus$CC_Corr_Coefs,
+  CC_Corr_Coefs         = old_cca_nucleus$Keratinocytes$CC_Corr_Coefs,
   CSP_Scores            = csp_scores_nuc,
   CEP_Scores            = cep_scores_nuc,
   CSP_Vectors           = csp_vectors_nuc,
@@ -189,9 +187,7 @@ if (!is.null(old_cca_nucleus$Keratinocytes$Prioritized_Variables)) {
 
 cca_result_nuc <- anchor_cca_signs(cca_result_nuc)
 
-obj@misc[["kstitch"]][["nucleus_cca"]] <- cca_result_nuc[
-  setdiff(names(cca_result_nuc), c("CSP_Scores", "CEP_Scores"))
-]
+obj@misc[["kstitch"]][["nucleus_cca"]] <- cca_result_nuc
 
 cat(sprintf("CCA (nucleus) stored: %d canonical components\n", k_nucleus))
 

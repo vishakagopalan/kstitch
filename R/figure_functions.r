@@ -28,13 +28,15 @@ plot_shape_modes <- function(tpca_result,
   pga_py_dir <- system.file("python", package = "kstitch")
   pga        <- reticulate::import_from_path("PGA", path = pga_py_dir)
 
-  df <- pga$reconstruct_shapes_from_pca(
+  raw <- pga$reconstruct_shapes_from_pca(
     v        = t(info$v_matrix),
     mu       = t(info$frechet_mean),
     lambdas  = info$variances,
     sds_to_plot = sds_to_plot,
     num_pcs  = as.integer(num_pcs)
   )
+  df  <- as.data.frame(lapply(raw, as.vector))
+  return(df)
 
   variances   <- info$variances
   pct_var     <- round(100 * variances / sum(variances), 2)

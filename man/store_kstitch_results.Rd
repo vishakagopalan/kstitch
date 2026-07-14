@@ -32,10 +32,7 @@ writes results into the Seurat object in two places:
 \enumerate{
 \item CSP and CEP scores are assembled across groups into object-spanning
 \code{DimReduc} slots (\code{obj[["csp"]]} and \code{obj[["cep"]]}).
-Because each cell belongs to exactly one group, per-group score rows
-tile the object without overlap.
-\item All other per-group fit information (canonical vectors, correlations,
-anchor features, priority info, p-values if present) is written to
+\item All other per-group fit information is written to
 \code{obj@misc$kstitch[[group_level]]}.
 }
 }

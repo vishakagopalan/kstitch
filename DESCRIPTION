@@ -31,3 +31,16 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+Config/reticulate:
+  list(
+    packages = list(
+      list(package = "numpy"),
+      list(package = "h5py"),
+      list(package = "shapely"),
+      list(package = "scipy"),
+      list(package = "pandas"),
+      list(package = "pyarrow"),
+      list(package = "shapely"),
+      list(package = "scipy")
+    )
+  )

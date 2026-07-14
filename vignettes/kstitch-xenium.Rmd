@@ -1,19 +1,281 @@
 ---
-title: "kstitch-xenium"
+title: "Integrating morphology and gene expression with kstitch"
+subtitle: "A Xenium Prime melanoma keratinocyte case study"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{kstitch-xenium}
+  %\VignetteIndexEntry{Integrating morphology and gene expression with kstitch}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r setup, include = FALSE}
 knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  out.width = "100%"
 )
 ```
 
-```{r setup}
+## Introduction
+
+Spatial transcriptomics tells us *where* genes are expressed, but the shape of
+a cell — how round it is, how large its nucleus, how irregular its boundary —
+carries independent biological information that transcript counts alone cannot
+capture. **kstitch** links these two modalities by computing a low-dimensional
+representation of cell morphology (via Tangent PCA, or TPCA) and finding the
+axes of maximal correlation between shape and gene expression (via canonical
+correlation analysis, or CCA).
+
+This vignette walks through a complete kstitch analysis on a subset of
+keratinocytes from a human melanoma Xenium Prime dataset. The object used here
+has been pre-computed (TPCA, NMF, and CCA have already been run and stored
+inside the object) so that the vignette can be reproduced without Python or
+`rliger`. The script that built this object lives in
+`data-raw/prepare_vignette_data.R`.
+
+### What is TPCA?
+
+Standard PCA operates on flat Euclidean space. Cell contour polygons live on a
+curved manifold (Kendall's shape space), where straight-line interpolation
+between shapes is geometrically meaningless. Tangent PCA (also called Principal
+Geodesic Analysis, or PGA) works by:
+
+1. Finding the **Fréchet mean** — the average shape in the curved space.
+2. Projecting all shapes onto the **tangent plane** at that mean via a log-map.
+3. Running standard SVD on the projected (now flat) coordinates.
+
+The result is a set of **shape principal components** (Shape PCs) that
+describe the major axes of morphological variation in a geometrically correct
+way.
+
+### What does CCA find?
+
+CCA finds linear combinations of the shape PCs (called **CSP** — Canonical
+Shape variates) and linear combinations of the NMF factors (called **CEP** —
+Canonical Expression variates) such that each CSP/CEP pair has maximal
+correlation. A high canonical correlation on the first component means there is
+a strong axis of joint morpho-molecular variation: cells that differ in shape
+along CSP1 also differ in gene expression along CEP1.
+
+---
+
+## Setup
+
+```{r load}
 library(kstitch)
+library(ggplot2)
+```
+
+Load the pre-computed vignette object:
+
+```{r load-obj}
+obj <- readRDS(system.file("extdata", "kstitch_vignette_xenium.rds",
+                           package = "kstitch"))
+obj
+```
+
+The object contains 3,171 keratinocytes. Of these, 2,331 have TPCA shape PCs
+computed for both cell and nucleus boundaries. The remaining 840 cells have
+`NA` in the TPCA reductions — these are cells that were excluded from the PGA
+run (e.g. cells with degenerate or missing boundary polygons).
+
+```{r check-reductions}
+# Available reductions
+names(obj@reductions)
+
+# How many cells have TPCA embeddings
+sum(!is.na(Seurat::Embeddings(obj, "tpca_nucleus")[, 1]))
+```
+
+---
+
+## Step 1 — Inspect shape modes
+
+The `plot_shape_modes()` function reconstructs and plots cell shapes along each
+principal geodesic component at a range of standard deviation values. This is
+the most direct way to understand what each shape PC captures biologically.
+
+```{r shape-modes, fig.height = 6}
+tpca_nucleus_info <- list(
+  PGA_Embedding = Seurat::Embeddings(obj, "tpca_nucleus"),
+  Info          = get_tpca_results(obj, "nucleus"),
+  contour_type  = "nucleus",
+  output_dir    = NA_character_
+)
+
+plot_shape_modes(
+  tpca_nucleus_info,
+  sds_to_plot = c(-2, -1, 0, 1, 2),
+  num_pcs     = 4L
+)
+```
+
+Reading these plots: each row is a shape PC, each column is a standard
+deviation value along that component. PC1 here is dominated by **nuclear
+size** (as expected — area variation is re-introduced as `scaled_log_area`
+and tends to dominate the first component). PC2 and beyond capture
+**shape** variation independent of size.
+
+---
+
+## Step 2 — Inspect canonical correlations
+
+Retrieve the CCA results for the nucleus contour analysis:
+
+```{r get-cca}
+nuc_cca <- obj@misc$kstitch$nucleus_cca
+
+# Canonical correlations across components
+barplot(nuc_cca$CC_Corr_Coefs,
+        names.arg = paste0("CC", seq_along(nuc_cca$CC_Corr_Coefs)),
+        ylab = "Canonical correlation",
+        main = "Nucleus CCA — canonical correlations",
+        col  = "steelblue")
+```
+
+The first few canonical correlations are typically the most interpretable.
+A value above ~0.3–0.4 generally indicates a biologically meaningful
+morpho-molecular axis.
+
+---
+
+## Step 3 — CSP loadings
+
+The CSP loading plot shows which shape features load most strongly on each
+canonical shape variate. By convention (enforced by `anchor_cca_signs()`),
+the sign of each component is set so that the shape feature with the highest
+absolute structure correlation loads **positively**. The anchor feature is
+shown in the subtitle.
+
+```{r csp-loadings}
+plot_csp_loadings(nuc_cca, cc_idx = 1)
+```
+
+```{r csp-loadings-2}
+plot_csp_loadings(nuc_cca, cc_idx = 2)
+```
+
+CSP1 is typically dominated by nuclear area (large positive loading on
+`scaled_log_area`). CSP2 and beyond capture shape variation independent of
+size — look for loadings on Shape PC2, PC3, etc.
+
+---
+
+## Step 4 — CEP loadings
+
+The CEP loading plot shows which NMF factors are most associated with each
+morphological axis. Factors with large positive loadings on CEP1 are
+up-regulated in cells with large CSP1 scores (i.e. cells with the morphology
+that CSP1 represents).
+
+```{r cep-loadings}
+plot_cep_loadings(nuc_cca, cc_idx = 1)
+```
+
+```{r cep-loadings-2}
+plot_cep_loadings(nuc_cca, cc_idx = 2)
+```
+
+To interpret which genes drive each NMF factor, inspect
+`obj@misc$kstitch$nmf$NMF_Loading` — each column is a factor, each row
+is a gene.
+
+---
+
+## Step 5 — CSP-binned boundary montage
+
+The boundary montage is the headline figure of kstitch. Cells are binned by
+their CSP score into deciles. Within each bin, the cells closest to the bin
+centre (medoids, measured by pairwise PGA distance) are selected and their
+contours are Procrustes-aligned to the Fréchet mean and displayed.
+
+By default (`area_rescale = TRUE`), contours are rescaled by `sqrt(area)` so
+that the displayed size reflects true nuclear area — the size gradient you see
+across bins is real.
+
+```{r montage, fig.height = 3.5}
+plot_csp_boundary_montage(
+  group_result           = nuc_cca,
+  tpca_result            = tpca_nucleus_info,
+  cc_idx                 = 1L,
+  num_bins               = 10L,
+  num_cells_for_boundary = 5L,
+  area_rescale           = TRUE
+)
+```
+
+> **Note:** Because `pre_shape_embedding` was not shipped with this vignette
+> object (to keep file size small), shapes are reconstructed from the top PCA
+> components. Fine morphological detail may differ slightly from the original
+> contours — this is noted in the plot subtitle.
+
+---
+
+## Step 6 — Repeat for cell contours
+
+Everything above can be repeated for cell (rather than nucleus) contours by
+substituting `cell_cca` and `tpca_cell`:
+
+```{r cell-cca, eval = TRUE}
+cell_cca <- obj@misc$kstitch$cell_cca
+
+plot_csp_loadings(cell_cca, cc_idx = 1)
+plot_cep_loadings(cell_cca, cc_idx = 1)
+```
+
+Comparing nucleus and cell CCA results reveals which morpho-molecular axes are
+driven by nuclear shape specifically versus whole-cell shape.
+
+---
+
+## Running the full pipeline on your own data
+
+The vignette above skips the TPCA and NMF computation steps to keep it
+self-contained. For a full analysis on your own Xenium or CosMx data:
+
+```r
+# 1. Export boundary parquet (done externally — see data-raw/prepare_vignette_data.R)
+
+# 2. Run TPCA
+tpca_result <- run_tpca(
+  boundary_parquet_path = "nucleus_boundaries.parquet",
+  output_dir            = "output/tpca_nucleus",
+  contour_type          = "nucleus"
+)
+obj <- store_tpca_results(obj, tpca_result)
+
+# 3. Run NMF
+nmf_results <- compute_nmf(
+  obj        = obj,
+  assay_name = "Xenium",
+  group.by   = "cell_type"
+)
+
+# 4. Build shape matrix (shape PCs + scaled log-area)
+shape_mat <- cbind(
+  scaled_log_area = scale(log(area_vec)),
+  Seurat::Embeddings(obj, "tpca_nucleus")[, 1:10]
+)
+
+# 5. Run CCA
+cca_results <- link_shape_and_factors(
+  obj      = obj,
+  nmf_mat  = nmf_results$YourCellType$NMF_Matrix,
+  shape_mat = shape_mat,
+  group.by  = "cell_type"
+)
+obj <- store_kstitch_results(obj, cca_results)
+```
+
+See `?run_tpca`, `?compute_nmf`, and `?link_shape_and_factors` for full
+argument documentation.
+
+---
+
+## Session info
+
+```{r session-info}
+sessionInfo()
 ```
