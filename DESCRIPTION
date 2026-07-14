@@ -40,7 +40,6 @@ Config/reticulate:
       list(package = "scipy"),
       list(package = "pandas"),
       list(package = "pyarrow"),
-      list(package = "shapely"),
-      list(package = "scipy")
+      list(package = "multiprocess")
     )
   )
