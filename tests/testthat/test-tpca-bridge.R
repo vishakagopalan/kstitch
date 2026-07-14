@@ -2,7 +2,7 @@ make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
   emb <- matrix(rnorm(length(cell_names) * k), length(cell_names), k,
                 dimnames = list(cell_names, paste0("Shape_PC", seq_len(k))))
   list(
-    PGA_Embedding = emb,
+    TPCA_Embedding = emb,
     Info = list(
       variances           = sort(runif(k, 0.5, 5), decreasing = TRUE),
       v_matrix            = matrix(rnorm(100 * k), 100, k),
@@ -14,20 +14,20 @@ make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
   )
 }
 
-# ---- .load_pga_output -------------------------------------------------------
+# ---- .load_kendall_tpca_output -------------------------------------------------------
 
-test_that(".load_pga_output errors clearly when PGA_Info.h5 is absent", {
-  tmp <- file.path(tempdir(), "empty_pga_dir")
+test_that(".load_kendall_tpca_output errors clearly when TPCA_Info.h5 is absent", {
+  tmp <- file.path(tempdir(), "empty_tpca_dir")
   dir.create(tmp, showWarnings = FALSE)
-  expect_error(kstitch:::.load_pga_output(tmp), "PGA_Info.h5 not found")
+  expect_error(kstitch:::.load_kendall_tpca_output(tmp), "TPCA_Info.h5 not found")
 })
 
-test_that(".load_pga_output errors clearly when Shape_Metadata.csv.gz is absent", {
+test_that(".load_kendall_tpca_output errors clearly when Shape_Metadata.csv.gz is absent", {
   tmp <- file.path(tempdir(), "missing_meta_dir")
   dir.create(tmp, showWarnings = FALSE)
-  dummy <- file.path(tmp, "PGA_Info.h5")
+  dummy <- file.path(tmp, "TPCA_Info.h5")
   file.create(dummy)
-  expect_error(kstitch:::.load_pga_output(tmp), "Shape_Metadata.csv.gz not found")
+  expect_error(kstitch:::.load_kendall_tpca_output(tmp), "Shape_Metadata.csv.gz not found")
   file.remove(dummy)
 })
 
