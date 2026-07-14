@@ -12,6 +12,10 @@ link_shape_and_factors(
   min_cells = 100,
   scale = TRUE,
   test_significance = FALSE,
+  nperm = 1000L,
+  perm_seed = NULL,
+  prioritize = TRUE,
+  ccs_to_prioritize = NULL,
   verbose = FALSE
 )
 }
@@ -39,8 +43,6 @@ Default \code{TRUE}.}
 permutation p-values via \code{\link{cca_pvalues}} for each group.
 Default \code{FALSE}.}
 
-\item{verbose}{Logical. Print progress messages. Default \code{FALSE}.}
-
 \item{nperm}{Integer. Number of permutations passed to \code{cca_pvalues}
 when \code{test_significance = TRUE}. Default 1000L.}
 
@@ -52,6 +54,8 @@ group's output. Default \code{TRUE}.}
 
 \item{ccs_to_prioritize}{Integer vector. Components passed to
 \code{\link{prioritize_cca_components}}. Defaults to all components.}
+
+\item{verbose}{Logical. Print progress messages. Default \code{FALSE}.}
 }
 \value{
 A named list, one element per group, each containing:
@@ -63,6 +67,7 @@ A named list, one element per group, each containing:
 \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
 \item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
 \item{CEP_Self_Correlations}{Structure correlations of NMF factors with CEP scores.}
+\item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 }
 }

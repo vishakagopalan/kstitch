@@ -461,14 +461,21 @@ def reconstruct_shapes_from_pca(v, mu, lambdas, sds_to_plot, num_pcs=8):
             theta = scale * np.sqrt(lambdas[j])
             vec2 = exp(mu, vec.reshape(mu.shape), theta=theta)
             df = pd.DataFrame(vec2.T).rename(columns={0:'x',1:'y'})
-            df.loc[:,"PC"] = "PC"+str(j+1)
-            df.loc[:,"sd_val"] = scale_to_store
+            df["PC"]     = f"PC{j + 1}"
+            df["sd_val"] = float(scale_to_store)
+            df["PC"] = df["PC"].to_numpy(dtype=object)
             
             shapes_df = pd.concat( [shapes_df,df], axis=0)
 
     shapes_df = shapes_df.reset_index(drop=True)
+    shapes_df["PC"] = shapes_df["PC"].to_numpy(dtype=object)
     
-    return(shapes_df)
+    return {
+        "x":      shapes_df["x"].to_numpy(dtype=float),
+        "y":      shapes_df["y"].to_numpy(dtype=float),
+        "PC":     shapes_df["PC"].to_numpy(dtype=object),
+        "sd_val": shapes_df["sd_val"].to_numpy(dtype=float),
+    }
 
 def exp_safe(p, v, theta=None, eps=1e-12):
     """
