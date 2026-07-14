@@ -99,12 +99,29 @@ run_tpca <- function(boundary_parquet_path,
                      use_parallel     = FALSE,
                      num_threads      = 8L,
                      frechet_mean_tol = 1e-4,
+                     use_cache = TRUE,
                      max_frechet_iter = 1000L) {
 
   contour_type <- match.arg(contour_type)
 
   if (!file.exists(boundary_parquet_path))
     stop(sprintf("boundary_parquet_path '%s' does not exist.", boundary_parquet_path))
+
+  if (use_cache) {
+    df_for_hash <- arrow::read_parquet(boundary_parquet_path)
+    key <- .tpca_cache_key(
+      df               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
+      contour_type     = contour_type,
+      num_vertices     = num_vertices,
+      eta              = eta,
+      frechet_mean_tol = frechet_mean_tol,
+      max_frechet_iter = max_frechet_iter
+    )
+    if (.tpca_cache_exists(key)) {
+      message("Loading TPCA results from cache (key: ", key, ") ...")
+      return(.tpca_cache_read(key))
+    }
+  }
 
   kendall_tpca_py_dir <- system.file("python", package = "kstitch")
   if (!nzchar(kendall_tpca_py_dir))
@@ -145,6 +162,22 @@ run_tpca <- function(boundary_parquet_path,
   result              <- .load_kendall_tpca_output(output_dir)
   result$contour_type <- contour_type
   result$output_dir   <- output_dir
+
+  if (use_cache) {
+    .tpca_cache_write(
+      key        = key,
+      output_dir = output_dir,
+      cache_meta = list(
+        contour_type     = contour_type,
+        num_vertices     = num_vertices,
+        eta              = eta,
+        frechet_mean_tol = frechet_mean_tol,
+        max_frechet_iter = max_frechet_iter
+      )
+    )
+    message("TPCA results written to cache (key: ", key, ").")
+  }
+
 
   result
 }
