@@ -2,7 +2,7 @@
 #'
 #' Accepts the raw segmentation list returned by \code{ReadXenium} or
 #' \code{ReadNanostring}, normalises the contour data frame, passes it
-#' directly to PGA (no intermediate parquet), runs TPCA, and returns a
+#' directly to kendall_tpca (no intermediate parquet), runs TPCA, and returns a
 #' result ready for \code{store_tpca_results()}.
 #'
 #' @param obj          A Seurat object. Used to optionally subset contours to
@@ -32,6 +32,7 @@ export_seurat_contours <- function(obj,
                                    use_parallel      = FALSE,
                                    num_threads       = 8L,
                                    frechet_mean_tol  = 1e-4,
+                                   use_cache = TRUE,
                                    max_frechet_iter  = 1000L) {
 
   contour_type <- match.arg(contour_type)
@@ -47,11 +48,27 @@ export_seurat_contours <- function(obj,
   if (nrow(df) == 0L)
     stop("No contours remain after subsetting to cells in obj.")
 
-  # ── 3. Load PGA ──────────────────────────────────────────────────────────────
-  pga_py_dir <- system.file("python", package = "kstitch")
-  if (!nzchar(pga_py_dir))
+  # --- Optional : If cached result is available, return it instead to avoid recomputation. ---
+  if (use_cache) {
+    df_for_hash <- arrow::read_parquet(boundary_parquet_path)
+    key <- .tpca_cache_key(
+      df               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
+      contour_type     = contour_type,
+      num_vertices     = num_vertices,
+      eta              = eta,
+      frechet_mean_tol = frechet_mean_tol,
+      max_frechet_iter = max_frechet_iter
+    )
+    if (.tpca_cache_exists(key)) {
+      message("Loading TPCA results from cache (key: ", key, ") ...")
+      return(.tpca_cache_read(key))
+    }
+  }
+  # ── 3. Load TPCA ──────────────────────────────────────────────────────────────
+  kendall_tpca_py_dir <- system.file("python", package = "kstitch")
+  if (!nzchar(kendall_tpca_py_dir))
     stop("Could not locate inst/python/ inside the kstitch package.")
-  kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = pga_py_dir)
+  kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -73,7 +90,7 @@ export_seurat_contours <- function(obj,
   message("Running TPCA ...")
   kendall_tpca$run_kendall_tpca(
     pre_shape_input_dir   = output_dir,
-    pga_output_dir        = output_dir,
+    tpca_output_dir        = output_dir,
     cell_ids_to_analyze   = py_cell_ids,
     cell_id_col           = "cell_id",
     max_frechet_mean_iter = as.integer(max_frechet_iter),
@@ -88,6 +105,23 @@ export_seurat_contours <- function(obj,
   result              <- .load_kendall_tpca_output(output_dir)
   result$contour_type <- contour_type
   result$output_dir   <- output_dir
+
+
+  # --- Optional : If enabled, write results to cache to avoid re-computation --
+  if (use_cache) {
+    .tpca_cache_write(
+      key        = key,
+      output_dir = output_dir,
+      cache_meta = list(
+        contour_type     = contour_type,
+        num_vertices     = num_vertices,
+        eta              = eta,
+        frechet_mean_tol = frechet_mean_tol,
+        max_frechet_iter = max_frechet_iter
+      )
+    )
+    message("TPCA results written to cache (key: ", key, ").")
+  }
   result
 }
 
