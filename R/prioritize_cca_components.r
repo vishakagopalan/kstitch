@@ -9,7 +9,7 @@
 #' @param shape_mat Numeric matrix, cells x shape features, rownames = cell
 #'   names. Should be the same (optionally scaled) matrix passed to
 #'   \code{\link{link_shape_and_factors}}.
-#' @param nmf_mat Numeric matrix, cells x NMF factors, rownames = cell names.
+#' @param expr_mat Numeric matrix, cells x NMF factors, rownames = cell names.
 #' @param ccs_to_consider Integer vector of component indices to evaluate
 #'   (e.g. \code{1:3}).
 #' @param shape_side_rank Integer. A shape feature must rank within the top
@@ -36,7 +36,7 @@
 #' @seealso \code{\link{link_shape_and_factors}}, \code{\link{run_cca}}
 #' @export
 prioritize_cca_components <- function(shape_mat,
-                                      nmf_mat,
+                                      expr_mat,
                                       ccs_to_consider,
                                       shape_side_rank          = 5,
                                       factor_side_rank         = 5,
@@ -46,12 +46,12 @@ prioritize_cca_components <- function(shape_mat,
                                       num_times_among_top_ranks = 75) {
 
   if (!is.matrix(shape_mat)) shape_mat <- as.matrix(shape_mat)
-  if (!is.matrix(nmf_mat))   nmf_mat   <- as.matrix(nmf_mat)
+  if (!is.matrix(expr_mat))   expr_mat   <- as.matrix(expr_mat)
 
-  num_factors        <- ncol(nmf_mat)
+  num_factors        <- ncol(expr_mat)
   num_shape_features <- ncol(shape_mat)
 
-  cell_list <- intersect(rownames(shape_mat), rownames(nmf_mat))
+  cell_list <- intersect(rownames(shape_mat), rownames(expr_mat))
   if (!is.null(cell_subsample)) {
     cell_list <- intersect(cell_list, cell_subsample)
   }
@@ -65,7 +65,7 @@ prioritize_cca_components <- function(shape_mat,
 
     fit <- run_cca(
       shape_mat[sub_cells, , drop = FALSE],
-      nmf_mat[sub_cells,   , drop = FALSE],
+      expr_mat[sub_cells,   , drop = FALSE],
       scale = FALSE   # caller is responsible for scaling upstream
     )
 

@@ -1,23 +1,21 @@
-# TODO: Once the TPCA bridge (PR #6) and NMF wrapper (PR #5) store their
-# results as DimReducs inside the Seurat object, the explicit `nmf_mat` and
-# `shape_mat` arguments should be retired and this function should accept only
-# `obj`, pulling Embeddings(obj, "nmf") and Embeddings(obj, "tpca") internally.
-# The internal logic below will not need to change — only the front-matter that
-# builds `nmf_mat` and `shape_mat` from the object.
-
 #' Link shape and gene-expression embeddings via CCA
 #'
 #' Runs canonical correlation analysis (CCA) between a morphology embedding
-#' (e.g. TPCA shape PCs) and an NMF factor matrix, optionally stratified by a
-#' grouping variable. Results are returned as a named list intended to be stored
-#' in \code{obj@misc$kstitch} (see PR #4 for the storage helpers).
+#' (e.g. TPCA shape PCs) and a gene-expression dimensionality reduction
+#' (e.g. NMF factors, PCA scores, or any cell x feature matrix), optionally
+#' stratified by a grouping variable. Results are returned as a named list
+#' intended to be stored in \code{obj@misc$kstitch} via
+#' \code{\link{store_kstitch_results}}.
 #'
 #' @param obj A Seurat v5 object. Used to resolve \code{group.by} via
 #'   \code{@meta.data}; cell names are taken from \code{colnames(obj)}.
-#' @param nmf_mat Numeric matrix of NMF factors, cells x factors, with cell
-#'   names as row names.
-#' @param shape_mat Numeric matrix of shape embeddings (e.g. TPCA scores plus
-#'   scaled log-area), cells x features, with cell names as row names.
+#' @param expr_mat Numeric matrix of gene-expression embeddings (e.g. NMF
+#'   factors, PCA scores), cells x features, with cell names as row names.
+#'   Any dimensionality reduction method is supported; NMF-specific
+#'   post-processing (e.g. \code{\link{prioritize_cca_components}}) should
+#'   be applied separately after this function returns.
+#' @param shape_mat Numeric matrix of shape embeddings (e.g. TPCA scores),
+#'   cells x features, with cell names as row names.
 #' @param group.by Character scalar naming a column in \code{obj@meta.data} to
 #'   stratify by. CCA is run once per unique value. \code{NULL} (default) pools
 #'   all cells into a single group labelled \code{"all"}.
@@ -31,11 +29,6 @@
 #' @param nperm Integer. Number of permutations passed to \code{cca_pvalues}
 #'   when \code{test_significance = TRUE}. Default 1000L.
 #' @param perm_seed Optional integer seed for reproducibility of permutations.
-#' @param prioritize Logical. Whether to run \code{\link{prioritize_cca_components}}
-#'   after anchoring signs. Results stored under \code{Priority_Info} in each
-#'   group's output. Default \code{TRUE}.
-#' @param ccs_to_prioritize Integer vector. Components passed to
-#'   \code{\link{prioritize_cca_components}}. Defaults to all components.
 #' @param verbose Logical. Print progress messages. Default \code{FALSE}.
 #'
 #' @return A named list, one element per group, each containing:
@@ -46,32 +39,31 @@
 #'     \item{CSP_Vectors}{Feature x k matrix of shape canonical weight vectors.}
 #'     \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
 #'     \item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
-#'     \item{CEP_Self_Correlations}{Structure correlations of NMF factors with CEP scores.}
+#'     \item{CEP_Self_Correlations}{Structure correlations of expression features with CEP scores.}
 #'     \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 #'     \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 #'   }
 #'
-#' @seealso \code{\link{run_cca}}
+#' @seealso \code{\link{run_cca}}, \code{\link{cca_pvalues}},
+#'   \code{\link{anchor_cca_signs}}, \code{\link{prioritize_cca_components}}
 #' @export
 link_shape_and_factors <- function(obj,
-                                   nmf_mat,
+                                   expr_mat,
                                    shape_mat,
-                                   group.by = NULL,
-                                   min_cells = 100,
-                                   scale = TRUE,
+                                   group.by          = NULL,
+                                   min_cells         = 100,
+                                   scale             = TRUE,
                                    test_significance = FALSE,
-                                   nperm = 1000L,
-                                   perm_seed = NULL,
-                                   prioritize = TRUE,
-                                   ccs_to_prioritize = NULL,
-                                   verbose = FALSE) {
+                                   nperm             = 1000L,
+                                   perm_seed         = NULL,
+                                   verbose           = FALSE) {
 
   # --- input checks -----------------------------------------------------------
 
   stopifnot(
-    is.matrix(nmf_mat) || is.data.frame(nmf_mat),
+    is.matrix(expr_mat) || is.data.frame(expr_mat),
     is.matrix(shape_mat) || is.data.frame(shape_mat),
-    !is.null(rownames(nmf_mat)),
+    !is.null(rownames(expr_mat)),
     !is.null(rownames(shape_mat))
   )
 
@@ -89,12 +81,12 @@ link_shape_and_factors <- function(obj,
 
   cells_all <- Reduce(intersect, list(
     rownames(obj@meta.data),
-    rownames(nmf_mat),
+    rownames(expr_mat),
     rownames(shape_mat)
   ))
 
   if (length(cells_all) == 0) {
-    stop("No cells remain after intersecting rownames(obj@meta.data), rownames(nmf_mat), ",
+    stop("No cells remain after intersecting rownames(obj@meta.data), rownames(expr_mat), ",
          "and rownames(shape_mat). Check that row names match Seurat cell names.")
   }
 
@@ -125,7 +117,7 @@ link_shape_and_factors <- function(obj,
     if (verbose) message(sprintf("Running CCA for group '%s' (%d cells).", grp, n))
 
     X <- shape_mat[cells, , drop = FALSE]
-    Y <- nmf_mat[cells,   , drop = FALSE]
+    Y <- expr_mat[cells,  , drop = FALSE]
 
     if (scale) {
       X <- scale(X)
@@ -165,7 +157,9 @@ link_shape_and_factors <- function(obj,
     )
 
     if (test_significance) {
-      if (verbose) message(sprintf("  Computing permutation p-values for group '%s' (%d perms) ...", grp, nperm))
+      if (verbose) message(sprintf(
+        "  Computing permutation p-values for group '%s' (%d perms) ...", grp, nperm
+      ))
       results[[grp]][["P_Value_Info"]] <- cca_pvalues(
         X       = X,
         Y       = Y,
@@ -175,19 +169,7 @@ link_shape_and_factors <- function(obj,
       )
     }
 
-    # anchor signs
     results[[grp]] <- anchor_cca_signs(results[[grp]])
-
-    # optionally prioritize stable features
-    if (prioritize) {
-      ccs <- if (is.null(ccs_to_prioritize)) seq_len(length(results[[grp]]$CC_Corr_Coefs)) else ccs_to_prioritize
-      if (verbose) message(sprintf("  Prioritizing CCA components for group '%s' ...", grp))
-      results[[grp]][["Priority_Info"]] <- prioritize_cca_components(
-        shape_mat       = X,
-        nmf_mat         = Y,
-        ccs_to_consider = ccs
-      )
-    }
   }
 
   if (length(results) == 0) {

@@ -25,7 +25,8 @@ input_files <- list(
   tpca_embedding   = "~/Downloads/Temp_Melanoma_PGA_Out.rds",
   tpca_info        = "~/Downloads/Temp_Melanoma_PGA_Info.rds",
   cca_cell        = "~/Downloads/Temp_Melanoma_CCA_Cells.rds",
-  cca_nucleus     = "~/Downloads/Temp_Melanoma_CCA_Nuclei.rds"
+  cca_nucleus     = "~/Downloads/Temp_Melanoma_CCA_Nuclei.rds",
+  keratinocytes_with_single_nucleus = "~/Downloads/Temp_Keratinocyte_Single_Nuclei.rds"
 )
 
 # Verify all files exist
@@ -43,6 +44,7 @@ tpca_embedding_list      <- readRDS(input_files$tpca_embedding)
 tpca_info_list           <- readRDS(input_files$tpca_info)
 cca_cell_output         <- readRDS(input_files$cca_cell)
 cca_nucleus_output      <- readRDS(input_files$cca_nucleus)
+keratinocytes_with_single_nuclei <- readRDS(input_files$keratinocytes_with_single_nucleus)
 
 # ---- 1. Use the xenium object as-is (already keratinocyte subset) ----------
 

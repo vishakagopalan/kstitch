@@ -28,13 +28,15 @@
     paste0("Shape_PC", seq_len(ncol(kendall_tpca_mat)))
   )
 
-  meta <- data.table::fread(meta_path)
-  meta <- meta[, c("numpy_idx", "cell_id"), with = FALSE]
-  meta[, numpy_idx := as.character(numpy_idx)]
+  meta <- readr::read_csv(meta_path, show_col_types = FALSE)
+  meta <- meta |>
+    dplyr::select(numpy_idx, cell_id) |>
+    dplyr::mutate(numpy_idx = as.character(numpy_idx))
 
   kendall_tpca_df <- as.data.frame(kendall_tpca_mat) |>
     tibble::rownames_to_column("numpy_idx") |>
-    merge(meta, by = "numpy_idx") |>
+    dplyr::mutate(numpy_idx = as.character(numpy_idx)) |>
+    dplyr::inner_join(meta, by = "numpy_idx") |>
     dplyr::select(-numpy_idx) |>
     tibble::column_to_rownames("cell_id")
 
@@ -108,9 +110,8 @@ run_tpca <- function(boundary_parquet_path,
     stop(sprintf("boundary_parquet_path '%s' does not exist.", boundary_parquet_path))
 
   if (use_cache) {
-    df_for_hash <- arrow::read_parquet(boundary_parquet_path)
     key <- .tpca_cache_key(
-      df               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
+      contour_data               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
       contour_type     = contour_type,
       num_vertices     = num_vertices,
       eta              = eta,
@@ -129,7 +130,8 @@ run_tpca <- function(boundary_parquet_path,
 
   kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  output_dir = path.expand(output_dir)
+  dir.create(output_dir, recursive = TRUE)
 
   py_cell_ids <- if (!is.null(cell_ids))
     reticulate::r_to_py(as.list(cell_ids)) else NULL
@@ -148,7 +150,7 @@ run_tpca <- function(boundary_parquet_path,
   message("Running TPCA ...")
   kendall_tpca$run_kendall_tpca(
     pre_shape_input_dir   = output_dir,
-    kendall_tpca_output_dir        = output_dir,
+    output_dir        = output_dir,
     cell_ids_to_analyze   = py_cell_ids,
     cell_id_col           = cell_id_col,
     max_frechet_mean_iter = as.integer(max_frechet_iter),
