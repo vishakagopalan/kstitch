@@ -67,7 +67,7 @@ nmf_results <- compute_nmf(obj, assay_name = "Xenium", group.by = "cell_type")
 # --- 3. Link shape and expression via CCA ---
 cca_results <- link_shape_and_factors(
   obj        = obj,
-  nmf_mat    = nmf_results$Keratinocytes$NMF_Matrix,
+  expr_mat    = nmf_results$Keratinocytes$NMF_Matrix,
   shape_mat  = Seurat::Embeddings(obj, "tpca_cell"),
   group.by   = "cell_type"
 )

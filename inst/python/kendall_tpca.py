@@ -347,13 +347,14 @@ def kendall_tpca(X, mu=None, max_frechet_mean_iter=100, use_parallel=True,
     for i in range(X.shape[0]):
         U_i = log(mu, X[i])
         U_flat[i] = U_i.flatten()
-
+        
     P, sigma, R_t = np.linalg.svd(U_flat, full_matrices=False)
     lambdas = sigma ** 2 / (X.shape[0] - 1)
 
     embedding = P @ np.diag(sigma)
     if store_history:
         return embedding, lambdas, R_t.T, mu_result, U_flat
+      
     return embedding, lambdas, R_t.T, mu, U_flat
 
 
@@ -551,19 +552,19 @@ def compute_pre_shape_embedding(
         h5.create_dataset("pre_shape_space_embedding", data=pre_shape_mat)
 
 
-def run_kendall_tpca(pre_shape_input_dir, tpca_output_dir, cell_ids_to_analyze=None,
+def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
             cell_id_col="cell_id", max_frechet_mean_iter=1000, eta=1,
             use_parallel=False, num_threads=8, frechet_mean_tol=1e-4):
     """Run Kendall TPCA on a pre-shape embedding and write results to disk.
 
     Reads ``Pre_Shape_Space_Embedding.h5`` and ``Shape_Metadata.csv.gz``
     from ``pre_shape_input_dir``; writes ``TPCA_Info.h5`` to
-    ``tpca_output_dir``.
+    ``output_dir``.
 
     Parameters
     ----------
     pre_shape_input_dir : str
-    tpca_output_dir : str
+    output_dir : str
     cell_ids_to_analyze : list, optional
     cell_id_col : str
     max_frechet_mean_iter : int
@@ -572,7 +573,7 @@ def run_kendall_tpca(pre_shape_input_dir, tpca_output_dir, cell_ids_to_analyze=N
     num_threads : int
     frechet_mean_tol : float
     """
-    os.makedirs(tpca_output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     meta = pd.read_csv(
         os.path.join(pre_shape_input_dir, "Shape_Metadata.csv.gz")
@@ -589,8 +590,7 @@ def run_kendall_tpca(pre_shape_input_dir, tpca_output_dir, cell_ids_to_analyze=N
         pre_shape_mat = h5["pre_shape_space_embedding"][:]
 
     with h5py.File(
-        os.path.join(tpca_output_dir, "TPCA_Info.h5"), "w"
-    ) as h5:
+        os.path.join(output_dir, "TPCA_Info.h5"), "w") as h5:
         p, lambdas, v, mu, U_flat = kendall_tpca(
             pre_shape_mat[idxes],
             max_frechet_mean_iter=max_frechet_mean_iter,
@@ -606,4 +606,4 @@ def run_kendall_tpca(pre_shape_input_dir, tpca_output_dir, cell_ids_to_analyze=N
         h5.create_dataset("v_matrix",         data=v)
         h5.create_dataset("frechet_mean",     data=mu)
         h5.create_dataset("u_flattened",      data=U_flat)
-        logger.info("TPCA_Info.h5 written to %s", tpca_output_dir)
+        logger.info("TPCA_Info.h5 written to %s", output_dir)
