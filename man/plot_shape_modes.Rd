@@ -31,6 +31,6 @@ component at a range of standard deviation values, producing a PC x SD
 faceted grid.
 }
 \details{
-Calls \code{reconstruct_shapes_from_pca()} from \code{PGA.py} via
+Calls \code{reconstruct_shapes_from_pca()} from \code{kendall_tpca.py} via
 reticulate.
 }

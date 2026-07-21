@@ -6,7 +6,7 @@
 \usage{
 prioritize_cca_components(
   shape_mat,
-  nmf_mat,
+  expr_mat,
   ccs_to_consider,
   shape_side_rank = 5,
   factor_side_rank = 5,
@@ -21,7 +21,7 @@ prioritize_cca_components(
 names. Should be the same (optionally scaled) matrix passed to
 \code{\link{link_shape_and_factors}}.}
 
-\item{nmf_mat}{Numeric matrix, cells x NMF factors, rownames = cell names.}
+\item{expr_mat}{Numeric matrix, cells x NMF factors, rownames = cell names.}
 
 \item{ccs_to_consider}{Integer vector of component indices to evaluate
 (e.g. \code{1:3}).}

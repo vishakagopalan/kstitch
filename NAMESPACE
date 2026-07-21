@@ -2,10 +2,13 @@
 
 export(anchor_cca_signs)
 export(cca_pvalues)
+export(clear_tpca_cache)
 export(compute_nmf)
+export(export_seurat_contours)
 export(get_kstitch_results)
 export(get_tpca_results)
 export(link_shape_and_factors)
+export(list_tpca_cache)
 export(plot_cep_loadings)
 export(plot_csp_boundary_montage)
 export(plot_csp_loadings)

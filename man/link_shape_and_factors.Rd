@@ -6,7 +6,7 @@
 \usage{
 link_shape_and_factors(
   obj,
-  nmf_mat,
+  expr_mat,
   shape_mat,
   group.by = NULL,
   min_cells = 100,
@@ -14,8 +14,6 @@ link_shape_and_factors(
   test_significance = FALSE,
   nperm = 1000L,
   perm_seed = NULL,
-  prioritize = TRUE,
-  ccs_to_prioritize = NULL,
   verbose = FALSE
 )
 }
@@ -23,11 +21,14 @@ link_shape_and_factors(
 \item{obj}{A Seurat v5 object. Used to resolve \code{group.by} via
 \code{@meta.data}; cell names are taken from \code{colnames(obj)}.}
 
-\item{nmf_mat}{Numeric matrix of NMF factors, cells x factors, with cell
-names as row names.}
+\item{expr_mat}{Numeric matrix of gene-expression embeddings (e.g. NMF
+factors, PCA scores), cells x features, with cell names as row names.
+Any dimensionality reduction method is supported; NMF-specific
+post-processing (e.g. \code{\link{prioritize_cca_components}}) should
+be applied separately after this function returns.}
 
-\item{shape_mat}{Numeric matrix of shape embeddings (e.g. TPCA scores plus
-scaled log-area), cells x features, with cell names as row names.}
+\item{shape_mat}{Numeric matrix of shape embeddings (e.g. TPCA scores),
+cells x features, with cell names as row names.}
 
 \item{group.by}{Character scalar naming a column in \code{obj@meta.data} to
 stratify by. CCA is run once per unique value. \code{NULL} (default) pools
@@ -48,13 +49,6 @@ when \code{test_significance = TRUE}. Default 1000L.}
 
 \item{perm_seed}{Optional integer seed for reproducibility of permutations.}
 
-\item{prioritize}{Logical. Whether to run \code{\link{prioritize_cca_components}}
-after anchoring signs. Results stored under \code{Priority_Info} in each
-group's output. Default \code{TRUE}.}
-
-\item{ccs_to_prioritize}{Integer vector. Components passed to
-\code{\link{prioritize_cca_components}}. Defaults to all components.}
-
 \item{verbose}{Logical. Print progress messages. Default \code{FALSE}.}
 }
 \value{
@@ -66,17 +60,20 @@ A named list, one element per group, each containing:
 \item{CSP_Vectors}{Feature x k matrix of shape canonical weight vectors.}
 \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
 \item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
-\item{CEP_Self_Correlations}{Structure correlations of NMF factors with CEP scores.}
+\item{CEP_Self_Correlations}{Structure correlations of expression features with CEP scores.}
 \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 }
 }
 \description{
 Runs canonical correlation analysis (CCA) between a morphology embedding
-(e.g. TPCA shape PCs) and an NMF factor matrix, optionally stratified by a
-grouping variable. Results are returned as a named list intended to be stored
-in \code{obj@misc$kstitch} (see PR #4 for the storage helpers).
+(e.g. TPCA shape PCs) and a gene-expression dimensionality reduction
+(e.g. NMF factors, PCA scores, or any cell x feature matrix), optionally
+stratified by a grouping variable. Results are returned as a named list
+intended to be stored in \code{obj@misc$kstitch} via
+\code{\link{store_kstitch_results}}.
 }
 \seealso{
-\code{\link{run_cca}}
+\code{\link{run_cca}}, \code{\link{cca_pvalues}},
+\code{\link{anchor_cca_signs}}, \code{\link{prioritize_cca_components}}
 }
