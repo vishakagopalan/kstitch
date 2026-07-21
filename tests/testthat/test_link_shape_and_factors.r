@@ -13,8 +13,7 @@ test_that("pooled mode returns correct structure and high first canonical correl
 
   obj <- make_seurat_stub(cell_names)
 
-  res <- link_shape_and_factors(obj, nmf_mat, shape_mat,
-                                group.by = NULL, prioritize = FALSE)
+  res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = NULL)
 
   expect_named(res, "all")
   grp <- res[["all"]]
@@ -61,8 +60,7 @@ test_that("group.by splits cells and runs CCA per group", {
     celltype = c(rep("TypeA", n_a), rep("TypeB", n_b))
   ))
 
-  res <- link_shape_and_factors(obj, nmf_mat, shape_mat,
-                                group.by = "celltype", prioritize = FALSE)
+  res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = "celltype")
 
   expect_named(res, c("TypeA", "TypeB"), ignore.order = TRUE)
   expect_equal(nrow(res[["TypeA"]]$CSP_Scores), n_a)
@@ -85,7 +83,7 @@ test_that("groups below min_cells are skipped", {
   obj <- make_seurat_stub(cell_names)
 
   expect_warning(
-    res <- link_shape_and_factors(obj, nmf_mat, shape_mat, prioritize = FALSE),
+    res <- link_shape_and_factors(obj, nmf_mat, shape_mat),
     "empty list"
   )
   expect_equal(length(res), 0)
