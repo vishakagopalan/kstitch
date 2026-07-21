@@ -8,14 +8,13 @@ export_seurat_contours(
   obj,
   seg_list,
   contour_type = c("cell", "nucleus"),
-  output_dir,
+  output_dir = NULL,
   cell_ids = NULL,
   num_vertices = 50L,
   eta = 1,
   use_parallel = FALSE,
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
-  use_cache = TRUE,
   max_frechet_iter = 1000L
 )
 }
@@ -28,7 +27,12 @@ cells present in the object.}
 
 \item{contour_type}{One of \code{"cell"} or \code{"nucleus"}.}
 
-\item{output_dir}{Directory for TPCA intermediate outputs.}
+\item{output_dir}{Directory for TPCA intermediate outputs. Optional. If
+\code{NULL} (the default), a temporary directory is
+created for the duration of the call and deleted
+automatically when \code{export_seurat_contours()}
+returns. If supplied, the directory is created if
+absent and left on disk afterward.}
 
 \item{cell_ids}{Optional character vector of cell IDs to analyse.
 Defaults to all cells in \code{obj}.}
@@ -46,7 +50,9 @@ Defaults to all cells in \code{obj}.}
 \item{max_frechet_iter}{Integer. Maximum Frechet mean iterations.}
 }
 \value{
-A list in the format expected by \code{store_tpca_results()}.
+A list in the format expected by \code{store_tpca_results()}. Its
+\code{output_dir} element is \code{NULL} if a temporary directory was
+used (already deleted by the time the call returns).
 }
 \description{
 Accepts the raw segmentation list returned by \code{ReadXenium} or

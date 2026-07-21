@@ -6,7 +6,7 @@
 \usage{
 run_tpca(
   boundary_parquet_path,
-  output_dir,
+  output_dir = NULL,
   cell_ids = NULL,
   contour_type = c("cell", "nucleus"),
   num_vertices = 50L,
@@ -17,7 +17,6 @@ run_tpca(
   use_parallel = FALSE,
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
-  use_cache = TRUE,
   max_frechet_iter = 1000L
 )
 }
@@ -25,8 +24,13 @@ run_tpca(
 \item{boundary_parquet_path}{Path to a parquet file containing boundary
 coordinates.}
 
-\item{output_dir}{Directory where output files will be written. Created if
-absent.}
+\item{output_dir}{Directory where intermediate/output files will be
+written. Optional. If \code{NULL} (the default), a temporary directory
+is created for the duration of the call and deleted automatically when
+\code{run_tpca()} returns -- the returned list already contains
+everything downstream code needs, so nothing is lost. If supplied, the
+directory is created if absent, expanded (\code{~} is resolved), and
+left on disk after the call returns for later inspection or reuse.}
 
 \item{cell_ids}{Optional character vector of cell IDs to analyse.}
 
@@ -55,7 +59,8 @@ Default 8L.}
 }
 \value{
 A list with \code{TPCA_Embedding}, \code{Info}, \code{contour_type},
-and \code{output_dir}.
+and \code{output_dir} (the directory actually used; \code{NULL} if a
+temporary directory was used and has already been deleted).
 }
 \description{
 Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()} from

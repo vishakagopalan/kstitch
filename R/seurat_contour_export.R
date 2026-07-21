@@ -10,7 +10,12 @@
 #' @param seg_list     The list returned by \code{ReadXenium} or
 #'                     \code{ReadNanostring}.
 #' @param contour_type One of \code{"cell"} or \code{"nucleus"}.
-#' @param output_dir   Directory for TPCA intermediate outputs.
+#' @param output_dir   Directory for TPCA intermediate outputs. Optional. If
+#'                     \code{NULL} (the default), a temporary directory is
+#'                     created for the duration of the call and deleted
+#'                     automatically when \code{export_seurat_contours()}
+#'                     returns. If supplied, the directory is created if
+#'                     absent and left on disk afterward.
 #' @param cell_ids     Optional character vector of cell IDs to analyse.
 #'                     Defaults to all cells in \code{obj}.
 #' @param num_vertices Integer. Vertices to sample per contour (default 50).
@@ -20,19 +25,20 @@
 #' @param frechet_mean_tol Numeric. Convergence tolerance for Frechet mean.
 #' @param max_frechet_iter Integer. Maximum Frechet mean iterations.
 #'
-#' @return A list in the format expected by \code{store_tpca_results()}.
+#' @return A list in the format expected by \code{store_tpca_results()}. Its
+#'   \code{output_dir} element is \code{NULL} if a temporary directory was
+#'   used (already deleted by the time the call returns).
 #' @export
 export_seurat_contours <- function(obj,
                                    seg_list,
                                    contour_type      = c("cell", "nucleus"),
-                                   output_dir,
+                                   output_dir        = NULL,
                                    cell_ids          = NULL,
                                    num_vertices      = 50L,
                                    eta               = 1,
                                    use_parallel      = FALSE,
                                    num_threads       = 8L,
                                    frechet_mean_tol  = 1e-4,
-                                   use_cache = TRUE,
                                    max_frechet_iter  = 1000L) {
 
   contour_type <- match.arg(contour_type)
@@ -48,36 +54,21 @@ export_seurat_contours <- function(obj,
   if (nrow(df) == 0L)
     stop("No contours remain after subsetting to cells in obj.")
 
-  # --- Optional : If cached result is available, return it instead to avoid recomputation. ---
-  if (use_cache) {
-    df_for_hash <- arrow::read_parquet(boundary_parquet_path)
-    key <- .tpca_cache_key(
-      df               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
-      contour_type     = contour_type,
-      num_vertices     = num_vertices,
-      eta              = eta,
-      frechet_mean_tol = frechet_mean_tol,
-      max_frechet_iter = max_frechet_iter
-    )
-    if (.tpca_cache_exists(key)) {
-      message("Loading TPCA results from cache (key: ", key, ") ...")
-      return(.tpca_cache_read(key))
-    }
-  }
+  resolved <- .resolve_tpca_output_dir(output_dir)
+  work_dir <- resolved$path
+
   # ── 3. Load TPCA ──────────────────────────────────────────────────────────────
   kendall_tpca_py_dir <- system.file("python", package = "kstitch")
   if (!nzchar(kendall_tpca_py_dir))
     stop("Could not locate inst/python/ inside the kstitch package.")
   kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-
   py_cell_ids <- reticulate::r_to_py(as.list(cell_ids))
 
   # ── 4. Pre-shape embedding (in-memory, no parquet) ───────────────────────────
   message("Computing pre-shape embedding ...")
   kendall_tpca$compute_pre_shape_embedding(
-    pre_shape_output_dir   = output_dir,
+    pre_shape_output_dir   = work_dir,
     df                     = reticulate::r_to_py(df),
     num_vertices_to_sample = as.integer(num_vertices),
     cell_ids_to_analyze    = py_cell_ids,
@@ -89,8 +80,8 @@ export_seurat_contours <- function(obj,
   # ── 5. TPCA ──────────────────────────────────────────────────────────────────
   message("Running TPCA ...")
   kendall_tpca$run_kendall_tpca(
-    pre_shape_input_dir   = output_dir,
-    tpca_output_dir        = output_dir,
+    pre_shape_input_dir   = work_dir,
+    output_dir            = work_dir,
     cell_ids_to_analyze   = py_cell_ids,
     cell_id_col           = "cell_id",
     max_frechet_mean_iter = as.integer(max_frechet_iter),
@@ -102,26 +93,10 @@ export_seurat_contours <- function(obj,
 
   # ── 6. Read outputs from disk ─────────────────────────────────────────────
   message("Reading TPCA results ...")
-  result              <- .load_kendall_tpca_output(output_dir)
+  result              <- .load_kendall_tpca_output(work_dir)
   result$contour_type <- contour_type
-  result$output_dir   <- output_dir
+  result$output_dir   <- if (resolved$is_temp) NULL else work_dir
 
-
-  # --- Optional : If enabled, write results to cache to avoid re-computation --
-  if (use_cache) {
-    .tpca_cache_write(
-      key        = key,
-      output_dir = output_dir,
-      cache_meta = list(
-        contour_type     = contour_type,
-        num_vertices     = num_vertices,
-        eta              = eta,
-        frechet_mean_tol = frechet_mean_tol,
-        max_frechet_iter = max_frechet_iter
-      )
-    )
-    message("TPCA results written to cache (key: ", key, ").")
-  }
   result
 }
 
@@ -134,8 +109,8 @@ export_seurat_contours <- function(obj,
   # Xenium: ReadXenium returns nucleus_segmentations / segmentations
   # CosMx:  ReadNanostring returns segmentations only (no nucleus)
   slot_name <- switch(contour_type,
-    nucleus = "nucleus_segmentations",
-    cell    = "segmentations"
+                      nucleus = "nucleus_segmentations",
+                      cell    = "segmentations"
   )
 
   if (!slot_name %in% names(seg_list)) {
