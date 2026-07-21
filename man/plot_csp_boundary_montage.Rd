@@ -48,7 +48,7 @@ attached as attribute \code{"coord_data"} for downstream use.
 }
 \description{
 Bins cells by their CSP score into deciles, selects bin medoids (cells with
-smallest mean pairwise PGA distance), Procrustes-aligns their contours to
+smallest mean pairwise TPCA distance), Procrustes-aligns their contours to
 the Fréchet mean, and plots them as a montage faceted by bin.
 }
 \details{

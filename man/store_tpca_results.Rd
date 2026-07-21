@@ -18,7 +18,7 @@ store_tpca_results(obj, tpca_result, reduction_key_prefix = "ShapePC_")
 The Seurat object with TPCA results stored.
 }
 \description{
-Writes the PGA embedding as a \code{DimReduc} slot and fit metadata to
+Writes the TPCA embedding as a \code{DimReduc} slot and fit metadata to
 \code{obj@misc$kstitch$tpca[[contour_type]]}.
 }
 \seealso{

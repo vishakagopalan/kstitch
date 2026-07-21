@@ -131,7 +131,7 @@ run_tpca <- function(boundary_parquet_path,
   kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   output_dir = path.expand(output_dir)
-  dir.create(output_dir, recursive = TRUE)
+  dir.create(output_dir, recursive = TRUE, showWarnings=FALSE)
 
   py_cell_ids <- if (!is.null(cell_ids))
     reticulate::r_to_py(as.list(cell_ids)) else NULL

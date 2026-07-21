@@ -17,6 +17,7 @@ run_tpca(
   use_parallel = FALSE,
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
+  use_cache = TRUE,
   max_frechet_iter = 1000L
 )
 }
@@ -53,12 +54,12 @@ Default 8L.}
 \item{max_frechet_iter}{Maximum iterations. Default 1000L.}
 }
 \value{
-A list with \code{PGA_Embedding}, \code{Info}, \code{contour_type},
+A list with \code{TPCA_Embedding}, \code{Info}, \code{contour_type},
 and \code{output_dir}.
 }
 \description{
-Calls \code{compute_pre_shape_embedding()} and \code{run_pga()} from
-\code{PGA.py} via reticulate, then reads the results back into R.
+Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()} from
+\code{kendall_tpca.py} via reticulate, then reads the results back into R.
 }
 \seealso{
 \code{\link{store_tpca_results}}
