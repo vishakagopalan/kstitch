@@ -59,6 +59,31 @@
   )
 }
 
+#' Resolve output_dir, falling back to an auto-cleaned temp directory
+#'
+#' If \code{output_dir} is \code{NULL}, a fresh temporary directory is
+#' created and scheduled for deletion when the calling function exits
+#' (success or error), via \code{withr::local_tempdir()} in the caller's
+#' environment. If \code{output_dir} is supplied, it is expanded and created
+#' if absent, and is never auto-deleted -- the caller is responsible for it.
+#'
+#' @param output_dir Character or \code{NULL}.
+#' @param env Environment to scope the temp directory's lifetime to
+#'   (normally the calling function's environment, via
+#'   \code{parent.frame()}).
+#' @return A list with \code{path} (character, expanded/created directory)
+#'   and \code{is_temp} (logical, whether it was auto-generated).
+#' @keywords internal
+.resolve_tpca_output_dir <- function(output_dir, env = parent.frame()) {
+  if (is.null(output_dir)) {
+    path <- withr::local_tempdir(.local_envir = env)
+    return(list(path = path, is_temp = TRUE))
+  }
+  path <- path.expand(output_dir)
+  dir.create(path, recursive = TRUE, showWarnings = FALSE)
+  list(path = path, is_temp = FALSE)
+}
+
 # ---- exported functions -----------------------------------------------------
 
 #' Run Tangent PCA on cell or nucleus boundary contours
@@ -68,8 +93,13 @@
 #'
 #' @param boundary_parquet_path Path to a parquet file containing boundary
 #'   coordinates.
-#' @param output_dir Directory where output files will be written. Created if
-#'   absent.
+#' @param output_dir Directory where intermediate/output files will be
+#'   written. Optional. If \code{NULL} (the default), a temporary directory
+#'   is created for the duration of the call and deleted automatically when
+#'   \code{run_tpca()} returns -- the returned list already contains
+#'   everything downstream code needs, so nothing is lost. If supplied, the
+#'   directory is created if absent, expanded (\code{~} is resolved), and
+#'   left on disk after the call returns for later inspection or reuse.
 #' @param cell_ids Optional character vector of cell IDs to analyse.
 #' @param contour_type One of \code{"cell"} or \code{"nucleus"}.
 #' @param num_vertices Integer. Vertices to resample each contour to. Default
@@ -86,11 +116,12 @@
 #' @param max_frechet_iter Maximum iterations. Default 1000L.
 #'
 #' @return A list with \code{TPCA_Embedding}, \code{Info}, \code{contour_type},
-#'   and \code{output_dir}.
+#'   and \code{output_dir} (the directory actually used; \code{NULL} if a
+#'   temporary directory was used and has already been deleted).
 #' @seealso \code{\link{store_tpca_results}}
 #' @export
 run_tpca <- function(boundary_parquet_path,
-                     output_dir,
+                     output_dir       = NULL,
                      cell_ids         = NULL,
                      contour_type     = c("cell", "nucleus"),
                      num_vertices     = 50L,
@@ -101,28 +132,16 @@ run_tpca <- function(boundary_parquet_path,
                      use_parallel     = FALSE,
                      num_threads      = 8L,
                      frechet_mean_tol = 1e-4,
-                     use_cache = TRUE,
                      max_frechet_iter = 1000L) {
 
-  contour_type <- match.arg(contour_type)
+  contour_type          <- match.arg(contour_type)
+  boundary_parquet_path <- path.expand(boundary_parquet_path)
 
   if (!file.exists(boundary_parquet_path))
     stop(sprintf("boundary_parquet_path '%s' does not exist.", boundary_parquet_path))
 
-  if (use_cache) {
-    key <- .tpca_cache_key(
-      contour_data               = readBin(boundary_parquet_path, "raw", file.size(boundary_parquet_path)),
-      contour_type     = contour_type,
-      num_vertices     = num_vertices,
-      eta              = eta,
-      frechet_mean_tol = frechet_mean_tol,
-      max_frechet_iter = max_frechet_iter
-    )
-    if (.tpca_cache_exists(key)) {
-      message("Loading TPCA results from cache (key: ", key, ") ...")
-      return(.tpca_cache_read(key))
-    }
-  }
+  resolved   <- .resolve_tpca_output_dir(output_dir)
+  work_dir   <- resolved$path
 
   kendall_tpca_py_dir <- system.file("python", package = "kstitch")
   if (!nzchar(kendall_tpca_py_dir))
@@ -130,16 +149,13 @@ run_tpca <- function(boundary_parquet_path,
 
   kendall_tpca <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
-  output_dir = path.expand(output_dir)
-  dir.create(output_dir, recursive = TRUE, showWarnings=FALSE)
-
   py_cell_ids <- if (!is.null(cell_ids))
     reticulate::r_to_py(as.list(cell_ids)) else NULL
 
   message("Computing pre-shape embedding ...")
   kendall_tpca$compute_pre_shape_embedding(
     boundary_parquet_path  = boundary_parquet_path,
-    pre_shape_output_dir   = output_dir,
+    pre_shape_output_dir   = work_dir,
     num_vertices_to_sample = as.integer(num_vertices),
     cell_ids_to_analyze    = py_cell_ids,
     x_vertex_col           = x_col,
@@ -149,8 +165,8 @@ run_tpca <- function(boundary_parquet_path,
 
   message("Running TPCA ...")
   kendall_tpca$run_kendall_tpca(
-    pre_shape_input_dir   = output_dir,
-    output_dir        = output_dir,
+    pre_shape_input_dir   = work_dir,
+    output_dir            = work_dir,
     cell_ids_to_analyze   = py_cell_ids,
     cell_id_col           = cell_id_col,
     max_frechet_mean_iter = as.integer(max_frechet_iter),
@@ -161,25 +177,12 @@ run_tpca <- function(boundary_parquet_path,
   )
 
   message("Reading TPCA results ...")
-  result              <- .load_kendall_tpca_output(output_dir)
+  result              <- .load_kendall_tpca_output(work_dir)
   result$contour_type <- contour_type
-  result$output_dir   <- output_dir
-
-  if (use_cache) {
-    .tpca_cache_write(
-      key        = key,
-      output_dir = output_dir,
-      cache_meta = list(
-        contour_type     = contour_type,
-        num_vertices     = num_vertices,
-        eta              = eta,
-        frechet_mean_tol = frechet_mean_tol,
-        max_frechet_iter = max_frechet_iter
-      )
-    )
-    message("TPCA results written to cache (key: ", key, ").")
-  }
-
+  # If a temp dir was used, it will be deleted (via withr) when this
+  # function returns -- report NULL rather than a path that no longer
+  # exists by the time the caller can act on it.
+  result$output_dir   <- if (resolved$is_temp) NULL else work_dir
 
   result
 }
