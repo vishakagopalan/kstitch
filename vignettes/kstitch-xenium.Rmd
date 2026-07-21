@@ -99,7 +99,7 @@ the most direct way to understand what each shape PC captures biologically.
 
 ```{r shape-modes, fig.height = 6}
 tpca_nucleus_info <- list(
-  PGA_Embedding = Seurat::Embeddings(obj, "tpca_nucleus"),
+  TPCA_Embedding = Seurat::Embeddings(obj, "tpca_nucleus"),
   Info          = get_tpca_results(obj, "nucleus"),
   contour_type  = "nucleus",
   output_dir    = NA_character_
@@ -195,6 +195,15 @@ By default (`area_rescale = TRUE`), contours are rescaled by `sqrt(area)` so
 that the displayed size reflects true nuclear area — the size gradient you see
 across bins is real.
 
+# Note: area_rescale = TRUE is requested here, but this vignette's
+# tpca_nucleus_info sets output_dir = NA_character_ (no Shape_Metadata.csv.gz
+# is shipped with the vignette object). plot_csp_boundary_montage() checks
+# file.exists(file.path(output_dir, "Shape_Metadata.csv.gz")) before
+# rescaling, so area_rescale silently falls back to FALSE here -- contours
+# below are NOT area-rescaled despite the argument. On your own data, with a
+# real output_dir containing Shape_Metadata.csv.gz, area_rescale = TRUE will
+# work as documented.
+
 ```{r montage, fig.height = 3.5}
 plot_csp_boundary_montage(
   group_result           = nuc_cca,
@@ -252,17 +261,100 @@ nmf_results <- compute_nmf(
   assay_name = "Xenium",
   group.by   = "cell_type"
 )
+## Running the full pipeline on your own data
 
-# 4. Build shape matrix (shape PCs + scaled log-area)
-shape_mat <- cbind(
-  scaled_log_area = scale(log(area_vec)),
-  Seurat::Embeddings(obj, "tpca_nucleus")[, 1:10]
+The vignette above skips the TPCA and NMF computation steps to keep it
+self-contained. For a full analysis on your own Xenium or CosMx data:
+
+```r
+# 1. Export boundary parquet (done externally — see data-raw/prepare_vignette_data.R)
+
+# 2. Run TPCA
+tpca_result <- run_tpca(
+  boundary_parquet_path = "nucleus_boundaries.parquet",
+  output_dir            = "output/tpca_nucleus",
+  contour_type          = "nucleus"
+)
+obj <- store_tpca_results(obj, tpca_result)
+
+# 3. Run NMF
+nmf_results <- compute_nmf(
+  obj        = obj,
+  assay_name = "Xenium",
+  group.by   = "cell_type"
+)
+```
+
+### Concatenating covariates onto the shape matrix
+
+In the manuscript accompanying this package, CCA is run between gene
+expression and a shape matrix that has cell (or nucleus) **area concatenated
+on as an extra column**, rather than treating area as a nuisance covariate to
+regress out. This lets CCA find canonical axes that may be driven in part by
+size, which is often biologically meaningful (e.g. larger nuclei tend to
+correlate with specific transcriptional states).
+
+Area is typically already present in `obj@meta.data` for Xenium and CosMx
+objects (check `colnames(obj@meta.data)` for the exact column name in your
+object — it may be `cell_area`, `nucleus_area`, or similar depending on how
+the object was loaded).
+
+The important part is **alignment**: `area_vec` must be in the exact same
+cell order as the shape matrix before you `cbind()` them together, or the
+area values will silently get attached to the wrong cells. The safe pattern
+is to always index the covariate *by the shape matrix's own row names*:
+
+```r
+shape_pcs <- Seurat::Embeddings(obj, "tpca_nucleus")[, 1:10]
+
+# Pull area from meta.data, explicitly aligned to shape_pcs's cell order.
+# Indexing by rownames(shape_pcs) first guarantees the result is already in
+# the right order; re-attaching the same names makes that explicit.
+area_vec <- setNames(
+  obj@meta.data[rownames(shape_pcs), "cell_area"],
+  rownames(shape_pcs)
 )
 
-# 5. Run CCA
+# Concatenate as an extra column -- safe now that both share the same row
+# order by construction. Log-transforming area is common practice since
+# cell/nucleus area is typically right-skewed.
+shape_mat <- cbind(
+  shape_pcs,
+  scaled_log_area = scale(log(area_vec))[, 1]
+)
+```
+
+The same pattern applies to concatenating covariates onto the **expression**
+side (`expr_mat`) rather than the shape side — for example, sequencing depth
+(`nCount_RNA`, already present in every Seurat object's `@meta.data` by
+default):
+
+```r
+expr_mat <- nmf_results$YourCellType$NMF_Matrix
+
+depth_vec <- setNames(
+  obj@meta.data[rownames(expr_mat), "nCount_RNA"],
+  rownames(expr_mat)
+)
+
+expr_mat <- cbind(expr_mat, scaled_log_depth = scale(log(depth_vec))[, 1])
+```
+
+> **CosMx note:** for CosMx data, a natural additional covariate is each
+> cell's distance to the nearest field-of-view (FOV) edge, since
+> segmentation quality tends to degrade near FOV boundaries. Computing this
+> distance requires FOV polygon/tile boundary information, which is not
+> always a direct `meta.data` column — see your loading tool's
+> documentation (e.g. Seurat's `LoadNanostring()`/`ReadNanostring()`, or the
+> `spacetrooper` package) for how FOV geometry is exposed for your object.
+> This will be covered in a future revision of this vignette.
+
+### Running CCA with the concatenated matrix
+
+```r
 cca_results <- link_shape_and_factors(
-  obj      = obj,
-  nmf_mat  = nmf_results$YourCellType$NMF_Matrix,
+  obj       = obj,
+  expr_mat  = expr_mat,
   shape_mat = shape_mat,
   group.by  = "cell_type"
 )
@@ -271,11 +363,3 @@ obj <- store_kstitch_results(obj, cca_results)
 
 See `?run_tpca`, `?compute_nmf`, and `?link_shape_and_factors` for full
 argument documentation.
-
----
-
-## Session info
-
-```{r session-info}
-sessionInfo()
-```
