@@ -8,6 +8,7 @@ run_tpca(
   boundary_parquet_path,
   output_dir = NULL,
   cell_ids = NULL,
+  cell_groups = NULL,
   contour_type = c("cell", "nucleus"),
   num_vertices = 50L,
   cell_id_col = "cell_id",
@@ -17,7 +18,9 @@ run_tpca(
   use_parallel = FALSE,
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
-  max_frechet_iter = 1000L
+  max_frechet_iter = 1000L,
+  return_results = TRUE,
+  load_pre_shape = TRUE
 )
 }
 \arguments{
@@ -26,18 +29,24 @@ coordinates.}
 
 \item{output_dir}{Directory where intermediate/output files will be
 written. Optional. If \code{NULL} (the default), a temporary directory
-is created for the duration of the call and deleted automatically when
-\code{run_tpca()} returns -- the returned list already contains
-everything downstream code needs, so nothing is lost. If supplied, the
-directory is created if absent, expanded (\code{~} is resolved), and
-left on disk after the call returns for later inspection or reuse.}
+is used. When \code{return_results = TRUE} the temp directory is deleted
+after the call; when \code{return_results = FALSE} it is kept so the
+saved files remain accessible. An explicit path is created if absent and
+always left on disk.}
 
-\item{cell_ids}{Optional character vector of cell IDs to analyse.}
+\item{cell_ids}{Optional character vector of cell IDs to analyse. Ignored
+when \code{cell_groups} is supplied.}
+
+\item{cell_groups}{Optional named character vector mapping cell IDs to
+group labels (e.g. \code{c(cell1 = "typeA", cell2 = "typeB")}). When
+supplied, TPCA is run separately per group and a named list of per-group
+results is returned. Each group is written to
+\code{<output_dir>/<group>_<contour_type>/}.}
 
 \item{contour_type}{One of \code{"cell"} or \code{"nucleus"}.}
 
-\item{num_vertices}{Integer. Vertices to resample each contour to. Default
-50L.}
+\item{num_vertices}{Integer. Vertices to resample each contour to.
+Default 50L.}
 
 \item{cell_id_col}{Column name for cell IDs. Default \code{"cell_id"}.}
 
@@ -50,22 +59,38 @@ left on disk after the call returns for later inspection or reuse.}
 \item{use_parallel}{Logical. Use multiprocessing in Python. Default
 \code{FALSE}.}
 
-\item{num_threads}{Integer. Parallel threads when \code{use_parallel = TRUE}.
-Default 8L.}
+\item{num_threads}{Integer. Parallel threads when
+\code{use_parallel = TRUE}. Default 8L.}
 
 \item{frechet_mean_tol}{Convergence tolerance. Default 1e-4.}
 
 \item{max_frechet_iter}{Maximum iterations. Default 1000L.}
+
+\item{return_results}{Logical. If \code{TRUE} (default), results are
+loaded into R and returned. If \code{FALSE}, results are written to
+disk and only the output paths are returned, with a message showing
+how to load them via \code{\link{load_kstitch_results}}.}
+
+\item{load_pre_shape}{Logical. Whether to load the pre-shape embedding
+into \code{Info$pre_shape_embedding}. Default \code{TRUE}. Set to
+\code{FALSE} to skip loading this (potentially large) array — e.g.
+when results will be stored in a Seurat object via
+\code{\link{store_tpca_results}}.}
 }
 \value{
-A list with \code{TPCA_Embedding}, \code{Info}, \code{contour_type},
-and \code{output_dir} (the directory actually used; \code{NULL} if a
-temporary directory was used and has already been deleted).
+When \code{return_results = TRUE}: a list (or named list of lists
+when \code{cell_groups} is supplied) with \code{TPCA_Embedding},
+\code{Info}, \code{Metadata}, \code{contour_type}, and
+\code{output_dir}.
+When \code{return_results = FALSE}: a list with \code{output_paths}
+(named character vector) and \code{fields} describing the structure
+returned by \code{load_kstitch_results(..., type = "tpca")}.
 }
 \description{
-Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()} from
-\code{kendall_tpca.py} via reticulate, then reads the results back into R.
+Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()}
+from \code{kendall_tpca.py} via reticulate, then reads the results back
+into R.
 }
 \seealso{
-\code{\link{store_tpca_results}}
+\code{\link{load_kstitch_results}}, \code{\link{store_tpca_results}}
 }

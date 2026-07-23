@@ -20,7 +20,11 @@ plot_csp_boundary_montage(
 \item{group_result}{A single group's entry from the list returned by
 \code{\link{link_shape_and_factors}}.}
 
-\item{tpca_result}{The list returned by \code{\link{run_tpca}}.}
+\item{tpca_result}{A single group's TPCA result — i.e. one element of the
+named list returned by \code{\link{run_tpca}} or
+\code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+\code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
+list directly.}
 
 \item{cc_idx}{Integer. Which CSP component to use for binning. Default 1L.}
 
@@ -53,7 +57,10 @@ the Fréchet mean, and plots them as a montage faceted by bin.
 }
 \details{
 When \code{area_rescale = TRUE} (default), normalised contours are rescaled
-by \code{sqrt(area)} so the displayed size reflects true cell area.
+by \code{sqrt(area)} so the displayed size reflects true cell area. Area
+values are read from the \code{Metadata} element of \code{tpca_result},
+which is returned directly by \code{\link{run_tpca}} and
+\code{\link{export_seurat_contours}} — no disk access is required.
 
 If the pre-shape embedding is not available in \code{tpca_result}, shapes
 are reconstructed from the top \code{reconstruction_pcs} PCA components.

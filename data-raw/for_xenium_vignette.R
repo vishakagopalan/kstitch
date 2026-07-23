@@ -27,15 +27,15 @@ tpca_out <- export_seurat_contours(seg_list=melanoma_xenium_segmentation_info,
                                    cell_ids = keratinocytes_cells_with_single_nucleus)
 
 num_shape_pcs_to_use <- 10
-tpca_mat <- tpca_out$TPCA_Embedding[,1:num_shape_pcs_to_use]
+tpca_mat <- tpca_out$all$TPCA_Embedding[,1:num_shape_pcs_to_use]
 
-area_mat <- tpca_out$Metadata[, "area", drop = FALSE]
-rownames(area_mat) <- tpca_out$Metadata[["cell_id"]]
+area_mat <- tpca_out$all$Metadata[, "area", drop = FALSE]
+rownames(area_mat) <- tpca_out$all$Metadata[["cell_id"]]
 area_mat <- as.matrix(area_mat)
 
 common_ids <- intersect( rownames(area_mat), rownames(tpca_mat))
 tpca_with_area_mat <- cbind( tpca_mat[common_ids,,drop=F], area_mat[common_ids,,drop=F] )
 
 cca_out <- link_shape_and_factors(keratinocyte_obj, expr_mat=nmf_output$all$NMF_Matrix,
-                                  shape_mat = tpca_with_area_mat, test_significance = F, verbose = T)
+                                  shape_mat = tpca_with_area_mat, test_significance = T, verbose = T)
 

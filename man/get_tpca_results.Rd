@@ -4,13 +4,16 @@
 \alias{get_tpca_results}
 \title{Retrieve TPCA fit metadata from a Seurat object}
 \usage{
-get_tpca_results(obj, contour_type = NULL)
+get_tpca_results(obj, contour_type = NULL, group = NULL)
 }
 \arguments{
 \item{obj}{A Seurat v5 object.}
 
-\item{contour_type}{\code{"cell"} or \code{"nucleus"}. \code{NULL} returns
-the full tpca misc list.}
+\item{contour_type}{\code{"cell"} or \code{"nucleus"}. \code{NULL}
+returns the full tpca misc list.}
+
+\item{group}{Optional group label. When supplied, returns the per-group
+fit metadata for the given contour type.}
 }
 \value{
 A list of TPCA fit metadata.

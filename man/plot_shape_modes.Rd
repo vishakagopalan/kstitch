@@ -12,7 +12,11 @@ plot_shape_modes(
 )
 }
 \arguments{
-\item{tpca_result}{The list returned by \code{\link{run_tpca}}.}
+\item{tpca_result}{A single group's TPCA result — i.e. one element of the
+named list returned by \code{\link{run_tpca}} or
+\code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+\code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
+list directly.}
 
 \item{sds_to_plot}{Numeric vector of SD values to plot along each PC.
 Default \code{seq(-3, 3, by = 1)}.}

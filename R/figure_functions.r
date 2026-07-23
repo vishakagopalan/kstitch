@@ -9,7 +9,11 @@
 #' Calls \code{reconstruct_shapes_from_pca()} from \code{kendall_tpca.py} via
 #' reticulate.
 #'
-#' @param tpca_result The list returned by \code{\link{run_tpca}}.
+#' @param tpca_result A single group's TPCA result — i.e. one element of the
+#'   named list returned by \code{\link{run_tpca}} or
+#'   \code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+#'   \code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
+#'   list directly.
 #' @param sds_to_plot Numeric vector of SD values to plot along each PC.
 #'   Default \code{seq(-3, 3, by = 1)}.
 #' @param num_pcs Integer. Number of PCs to show. Default 4L.
@@ -29,17 +33,17 @@ plot_shape_modes <- function(tpca_result,
   kendall_tpca        <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   raw <- kendall_tpca$reconstruct_shapes_from_pca(
-    v        = t(info$v_matrix),
-    mu       = t(info$frechet_mean),
-    lambdas  = info$variances,
+    v           = t(info$v_matrix),
+    mu          = t(info$frechet_mean),
+    lambdas     = info$variances,
     sds_to_plot = sds_to_plot,
-    num_pcs  = as.integer(num_pcs)
+    num_pcs     = as.integer(num_pcs)
   )
-  df  <- as.data.frame(lapply(raw, as.vector))
+  df <- as.data.frame(lapply(raw, as.vector))
 
-  variances   <- info$variances
-  pct_var     <- round(100 * variances / sum(variances), 2)
-  pct_var_df  <- data.frame(
+  variances  <- info$variances
+  pct_var    <- round(100 * variances / sum(variances), 2)
+  pct_var_df <- data.frame(
     PC      = paste0("PC", seq_len(length(pct_var))),
     disp_pc = paste0("PC", seq_len(length(pct_var)),
                      "\n(", pct_var, "%)")
@@ -62,10 +66,10 @@ plot_shape_modes <- function(tpca_result,
     ) +
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(
-      strip.text       = ggplot2::element_text(size = 9),
-      axis.text        = ggplot2::element_blank(),
-      axis.ticks       = ggplot2::element_blank(),
-      panel.grid       = ggplot2::element_blank()
+      strip.text = ggplot2::element_text(size = 9),
+      axis.text  = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      panel.grid = ggplot2::element_blank()
     )
 }
 
@@ -87,7 +91,7 @@ plot_shape_modes <- function(tpca_result,
 #' @return A \code{ggplot} object.
 #' @export
 plot_cep_loadings <- function(group_result,
-                              cc_idx        = 1L,
+                              cc_idx         = 1L,
                               bar_colour_pos = "steelblue",
                               bar_colour_neg = "tomato") {
 
@@ -174,7 +178,10 @@ plot_csp_loadings <- function(group_result,
 #' the Fréchet mean, and plots them as a montage faceted by bin.
 #'
 #' When \code{area_rescale = TRUE} (default), normalised contours are rescaled
-#' by \code{sqrt(area)} so the displayed size reflects true cell area.
+#' by \code{sqrt(area)} so the displayed size reflects true cell area. Area
+#' values are read from the \code{Metadata} element of \code{tpca_result},
+#' which is returned directly by \code{\link{run_tpca}} and
+#' \code{\link{export_seurat_contours}} — no disk access is required.
 #'
 #' If the pre-shape embedding is not available in \code{tpca_result}, shapes
 #' are reconstructed from the top \code{reconstruction_pcs} PCA components.
@@ -182,7 +189,11 @@ plot_csp_loadings <- function(group_result,
 #'
 #' @param group_result A single group's entry from the list returned by
 #'   \code{\link{link_shape_and_factors}}.
-#' @param tpca_result The list returned by \code{\link{run_tpca}}.
+#' @param tpca_result A single group's TPCA result — i.e. one element of the
+#'   named list returned by \code{\link{run_tpca}} or
+#'   \code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+#'   \code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
+#'   list directly.
 #' @param cc_idx Integer. Which CSP component to use for binning. Default 1L.
 #' @param num_bins Integer. Number of bins. Default 10L.
 #' @param num_cells_for_boundary Integer. Number of medoid cells to display
@@ -202,23 +213,23 @@ plot_csp_loadings <- function(group_result,
 #' @export
 plot_csp_boundary_montage <- function(group_result,
                                       tpca_result,
-                                      cc_idx             = 1L,
-                                      num_bins           = 10L,
+                                      cc_idx                 = 1L,
+                                      num_bins               = 10L,
                                       num_cells_for_boundary = 6L,
-                                      pcs_to_use         = 1:10,
-                                      area_rescale       = TRUE,
-                                      reconstruction_pcs = NULL,
-                                      line_colour        = "steelblue") {
+                                      pcs_to_use             = 1:10,
+                                      norm_rescale           = FALSE,
+                                      reconstruction_pcs     = NULL,
+                                      line_colour            = "steelblue") {
 
   kendall_tpca_py_dir <- system.file("python", package = "kstitch")
   kendall_tpca        <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
-  info        <- tpca_result$Info
-  mean_shape  <- t(info$frechet_mean)   # 2 x L
-  emb         <- group_result$CSP_Scores
-  shape_emb   <- tpca_result$TPCA_Embedding
+  info       <- tpca_result$Info
+  mean_shape <- t(info$frechet_mean)   # 2 x L
+  emb        <- group_result$CSP_Scores
+  shape_emb  <- tpca_result$TPCA_Embedding
 
-  pre_shape   <- info$pre_shape_embedding   # cells x 2 x L, or NULL
+  pre_shape          <- info$pre_shape_embedding   # cells x 2 x L, or NULL
   use_reconstruction <- is.null(pre_shape)
 
   if (use_reconstruction) {
@@ -227,12 +238,19 @@ plot_csp_boundary_montage <- function(group_result,
     recon_msg <- sprintf(
       paste0("Pre-shape embedding not available \u2014 shapes reconstructed ",
              "from top %d PCA component%s. Fine morphological detail may be lost."),
-      k_rec, if (k_rec == 1) "" else "s"
+      k_rec, if (k_rec == 1L) "" else "s"
     )
     message(recon_msg)
   } else {
     recon_msg <- NULL
     k_rec     <- NULL
+  }
+
+  # Validate norm_rescale — requires scale column in Metadata
+  meta <- tpca_result$Metadata
+  if (norm_rescale && (is.null(meta) || !"scale" %in% names(meta))) {
+    message("scale column not found in tpca_result$Metadata; norm rescaling disabled.")
+    norm_rescale <- FALSE
   }
 
   # bin cells by CSP score
@@ -242,20 +260,10 @@ plot_csp_boundary_montage <- function(group_result,
   bin_labels <- paste0("CSP", cc_idx, " Bin ", seq_len(num_bins))
   bin_vec    <- dplyr::ntile(csp_scores, num_bins)
   bin_df     <- data.frame(
-    cell    = cells_with_both,
-    score   = csp_scores,
-    bin     = factor(paste0("CSP", cc_idx, " Bin ", bin_vec),
-                     levels = bin_labels)
+    cell  = cells_with_both,
+    score = csp_scores,
+    bin   = factor(paste0("CSP", cc_idx, " Bin ", bin_vec), levels = bin_labels)
   )
-
-  # load shape metadata for area (needed for area rescaling)
-  meta_path <- file.path(tpca_result$output_dir, "Shape_Metadata.csv.gz")
-  if (area_rescale && file.exists(meta_path)) {
-    meta <- data.table::fread(meta_path)
-  } else {
-    meta       <- NULL
-    area_rescale <- FALSE
-  }
 
   pcs_to_use <- pcs_to_use[pcs_to_use <= ncol(shape_emb)]
   coord_df   <- data.frame()
@@ -266,16 +274,15 @@ plot_csp_boundary_montage <- function(group_result,
     if (length(cells_in_bin) < 1L) next
 
     # medoid selection: smallest mean pairwise TPCA distance
-    sub_emb  <- shape_emb[cells_in_bin, pcs_to_use, drop = FALSE]
-    dist_mat <- as.matrix(dist(sub_emb))
+    sub_emb   <- shape_emb[cells_in_bin, pcs_to_use, drop = FALSE]
+    dist_mat  <- as.matrix(dist(sub_emb))
     mean_dist <- colMeans(dist_mat)
-    sorted   <- sort(mean_dist)
+    sorted    <- sort(mean_dist)
     boundary_cells <- names(sorted)[seq_len(min(num_cells_for_boundary,
                                                 length(sorted)))]
 
     for (cell in boundary_cells) {
 
-      # get contour coordinates
       if (use_reconstruction) {
         pca_coords <- shape_emb[cell, seq_len(k_rec)]
         shape_mat  <- kendall_tpca$reconstruct_shape_from_pca_coords(
@@ -285,7 +292,6 @@ plot_csp_boundary_montage <- function(group_result,
           lambdas    = info$variances,
           return_df  = FALSE
         )
-        # shape_mat is 2 x L
         mat <- t(shape_mat)   # L x 2
       } else {
         cell_idx <- which(rownames(shape_emb) == cell)
@@ -295,11 +301,11 @@ plot_csp_boundary_montage <- function(group_result,
       # Procrustes-align to Fréchet mean
       rotated <- t(kendall_tpca$reparam_OPA(t(mat), mean_shape))   # L x 2
 
-      # area rescaling
-      if (area_rescale && !is.null(meta)) {
-        cell_area <- meta[meta$cell_id == cell, "area", drop = TRUE]
-        if (length(cell_area) == 1L && is.finite(cell_area) && cell_area > 0) {
-          rotated <- rotated * sqrt(cell_area)
+      # Frobenius norm rescaling — restores original contour scale
+      if (norm_rescale && !is.null(meta)) {
+        cell_scale <- meta$scale[meta$cell_id == cell]
+        if (length(cell_scale) == 1L && is.finite(cell_scale) && cell_scale > 0) {
+          rotated <- rotated * cell_scale
         }
       }
 
@@ -319,7 +325,7 @@ plot_csp_boundary_montage <- function(group_result,
 
   subtitle <- if (use_reconstruction) recon_msg else
     paste0("Contour type: ", tpca_result$contour_type,
-           if (area_rescale) " \u2022 area-rescaled" else "")
+           if (norm_rescale) " \u2022 Frobenius norm-rescaled" else "")
 
   p <- ggplot2::ggplot(
     coord_df,
@@ -336,10 +342,10 @@ plot_csp_boundary_montage <- function(group_result,
     ) +
     ggplot2::theme_minimal(base_size = 11) +
     ggplot2::theme(
-      axis.text        = ggplot2::element_blank(),
-      axis.ticks       = ggplot2::element_blank(),
-      panel.grid       = ggplot2::element_blank(),
-      strip.text       = ggplot2::element_text(size = 8)
+      axis.text  = ggplot2::element_blank(),
+      axis.ticks = ggplot2::element_blank(),
+      panel.grid = ggplot2::element_blank(),
+      strip.text = ggplot2::element_text(size = 8)
     )
 
   attr(p, "coord_data") <- coord_df

@@ -191,11 +191,9 @@ their CSP score into deciles. Within each bin, the cells closest to the bin
 centre (medoids, measured by pairwise PGA distance) are selected and their
 contours are Procrustes-aligned to the Fréchet mean and displayed.
 
-By default (`area_rescale = TRUE`), contours are rescaled by `sqrt(area)` so
-that the displayed size reflects true nuclear area — the size gradient you see
-across bins is real.
+By default (`norm_rescale = TRUE`), contours are rescaled by the contour's Frobenius norm prior to scale normalization so that the displayed size reflects true nuclear area — the size gradient you see across bins is real.
 
-Note: area_rescale = TRUE is requested here, but this vignette's
+Note: norm_rescale = TRUE is requested here, but this vignette's
 tpca_nucleus_info sets output_dir = NA_character_ (no Shape_Metadata.csv.gz
 is shipped with the vignette object). plot_csp_boundary_montage() checks
 file.exists(file.path(output_dir, "Shape_Metadata.csv.gz")) before
@@ -211,7 +209,7 @@ plot_csp_boundary_montage(
   cc_idx                 = 1L,
   num_bins               = 10L,
   num_cells_for_boundary = 5L,
-  area_rescale           = TRUE
+  norm_rescale           = TRUE
 )
 ```
 
