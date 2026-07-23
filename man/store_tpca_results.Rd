@@ -19,7 +19,16 @@ The Seurat object with TPCA results stored.
 }
 \description{
 Writes the TPCA embedding as a \code{DimReduc} slot and fit metadata to
+\code{obj@misc$kstitch$tpca}.
+}
+\details{
+For a single-group result, the reduction is named
+\code{tpca_<contour_type>} and metadata stored under
 \code{obj@misc$kstitch$tpca[[contour_type]]}.
+
+For a groupwise result (named list of per-group results), the reduction
+for each group is named \code{tpca_<contour_type>_<group>} and metadata
+stored under \code{obj@misc$kstitch$tpca[[contour_type]][[group]]}.
 }
 \seealso{
 \code{\link{run_tpca}}, \code{\link{get_tpca_results}}

@@ -258,11 +258,11 @@ def log_map_values(shapes, ref_shape, query_idxes):
         result[ctr] = log(ref_shape, shapes[idx])
     return result
 
+# ── Frechet mean ────────────────────────────────────────────────────────────
 
-# ── Frechet mean ───────────────────────────────────────────────────────────────
 
 def frechet(X, eta=0.001, use_parallel=False, num_chunks=4, max_iter=100,
-            tol=1e-4, store_history=False):
+            tol=1e-4, store_history=False, mu=None):
     """Compute the Frechet mean of a set of pre-shapes.
 
     Parameters
@@ -275,9 +275,12 @@ def frechet(X, eta=0.001, use_parallel=False, num_chunks=4, max_iter=100,
         Number of parallel workers.
     max_iter : int
     tol : float
-        Convergence tolerance on average tangent vector. 
+        Convergence tolerance on gradient norm of the update step.
     store_history : bool
         If True, also return the mean history and convergence trace.
+    mu : np.ndarray, shape (2, L), optional
+        Initial estimate of the Frechet mean. If None (default), the first
+        shape in X is used.
 
     Returns
     -------
@@ -285,7 +288,7 @@ def frechet(X, eta=0.001, use_parallel=False, num_chunks=4, max_iter=100,
         Frechet mean (shape (2, L)), or [mean, mean_history, history] when
         ``store_history=True``.
     """
-    mu = X[0]
+    mu = X[0] if mu is None else mu.copy()
     history = []
     if store_history:
         mu_history = np.zeros((max_iter, X.shape[1], X.shape[2]))
@@ -351,74 +354,6 @@ def frechet(X, eta=0.001, use_parallel=False, num_chunks=4, max_iter=100,
     if store_history:
         return [mu, mu_history[:i], history]
     return mu
-
-
-
-# ── Tangent Principal Component Analysis ────────────────────────────────────────────────
-def kendall_tpca(X, mu=None, max_frechet_mean_iter=100, use_parallel=True,
-        frechet_mean_tol=1e-4, num_chunks=4, eta=1, store_history=False):
-    """Run Principal Geodesic Analysis on a set of pre-shapes.
-
-    Parameters
-    ----------
-    X : np.ndarray, shape (N, 2, L)
-    mu : np.ndarray, optional
-        Pre-computed Frechet mean. Computed from X if None.
-    max_frechet_mean_iter : int
-    use_parallel : bool
-    frechet_mean_tol : float
-    num_chunks : int
-    eta : float
-    store_history : bool
-
-    Returns
-    -------
-    tuple
-        (p, lambdas, v, mu_or_mu_info, U_flat)
-        p          — embeddings, shape (N, n_pcs)
-        lambdas    — PC variances
-        v          — PC directions, shape (2L, n_pcs)
-        mu_or_info — Frechet mean, or history list when store_history=True
-        U_flat     — flattened log-map matrix, shape (N, 2L)
-    """
-    start_time = time.time()
-    logger.info("kendall_tpca: running on %d shapes, %d landmarks", X.shape[0], X.shape[2])
-
-    if mu is None:
-        logger.info("kendall_tpca: no mu provided, computing Frechet mean")
-        mu_result = frechet(
-            X, eta=eta, max_iter=max_frechet_mean_iter,
-            num_chunks=num_chunks, use_parallel=use_parallel,
-            tol=frechet_mean_tol, store_history=store_history
-        )
-        mu = mu_result[0] if store_history else mu_result
-    else:
-        logger.info("kendall_tpca: using provided mu")
-
-    U_flat = np.zeros((X.shape[0], 2 * X.shape[2]))
-    for i in range(X.shape[0]):
-        U_i = log(mu, X[i])
-        U_flat[i] = U_i.flatten()
-
-    logger.info("kendall_tpca: log-map complete, running SVD on %s matrix", U_flat.shape)
-
-    P, sigma, R_t = np.linalg.svd(U_flat, full_matrices=False)
-    lambdas = sigma ** 2 / (X.shape[0] - 1)
-    embedding = P @ np.diag(sigma)
-
-    total_var = lambdas.sum()
-    top5_frac = lambdas[:5].sum() / total_var if total_var > 0 else float("nan")
-    elapsed = time.time() - start_time
-    logger.info(
-        "kendall_tpca: done. %d PCs, top 5 explain %.1f%% of variance (elapsed %.1fs)",
-        len(lambdas), top5_frac * 100, elapsed
-    )
-
-    if store_history:
-        return embedding, lambdas, R_t.T, mu_result, U_flat
-
-    return embedding, lambdas, R_t.T, mu, U_flat
-
 # ── Reconstruction helpers ─────────────────────────────────────────────────────
 
 def reconstruct_shapes_from_pca(v, mu, lambdas, sds_to_plot, num_pcs=8):
@@ -614,9 +549,75 @@ def compute_pre_shape_embedding(
     ) as h5:
         h5.create_dataset("pre_shape_space_embedding", data=pre_shape_mat)
 
+def kendall_tpca(X, mu=None, max_frechet_mean_iter=100, use_parallel=True,
+        frechet_mean_tol=1e-4, num_chunks=4, eta=1, store_history=False):
+    """Run Principal Geodesic Analysis on a set of pre-shapes.
+
+    Parameters
+    ----------
+    X : np.ndarray, shape (N, 2, L)
+    mu : np.ndarray, shape (2, L), optional
+        Optional warm-start Frechet mean. If None (default), computed from
+        X via ``frechet()``.
+    max_frechet_mean_iter : int
+    use_parallel : bool
+    frechet_mean_tol : float
+    num_chunks : int
+    eta : float
+    store_history : bool
+
+    Returns
+    -------
+    tuple
+        (p, lambdas, v, mu_or_mu_info, U_flat)
+        p          — embeddings, shape (N, n_pcs)
+        lambdas    — PC variances
+        v          — PC directions, shape (2L, n_pcs)
+        mu_or_info — Frechet mean, or history list when store_history=True
+        U_flat     — flattened log-map matrix, shape (N, 2L)
+    """
+    start_time = time.time()
+    logger.info("kendall_tpca: running on %d shapes, %d landmarks", X.shape[0], X.shape[2])
+
+    if mu is None:
+        logger.info("kendall_tpca: no mu provided, computing Frechet mean")
+        mu_result = frechet(
+            X, eta=eta, max_iter=max_frechet_mean_iter,
+            num_chunks=num_chunks, use_parallel=use_parallel,
+            tol=frechet_mean_tol, store_history=store_history
+        )
+        mu_computed = mu_result[0] if store_history else mu_result
+    else:
+        logger.info("kendall_tpca: using provided mu")
+        mu_computed = mu.copy()
+        mu_result   = mu_computed
+
+    U_flat = np.zeros((X.shape[0], 2 * X.shape[2]))
+    for i in range(X.shape[0]):
+        U_i = log(mu_computed, X[i])
+        U_flat[i] = U_i.flatten()
+
+    logger.info("kendall_tpca: log-map complete, running SVD on %s matrix", U_flat.shape)
+
+    P, sigma, R_t = np.linalg.svd(U_flat, full_matrices=False)
+    lambdas   = sigma ** 2 / (X.shape[0] - 1)
+    embedding = P @ np.diag(sigma)
+
+    total_var = lambdas.sum()
+    top5_frac = lambdas[:5].sum() / total_var if total_var > 0 else float("nan")
+    elapsed   = time.time() - start_time
+    logger.info(
+        "kendall_tpca: done. %d PCs, top 5 explain %.1f%% of variance (elapsed %.1fs)",
+        len(lambdas), top5_frac * 100, elapsed
+    )
+
+    if store_history:
+        return embedding, lambdas, R_t.T, mu_result, U_flat
+
+    return embedding, lambdas, R_t.T, mu_computed, U_flat
 
 def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
-            cell_id_col="cell_id", max_frechet_mean_iter=1000, eta=1,
+            cell_id_col="cell_id", max_frechet_mean_iter=1000, eta=1, mu=None,
             use_parallel=False, num_threads=8, frechet_mean_tol=1e-4):
     """Run Kendall TPCA on a pre-shape embedding and write results to disk.
 
@@ -656,13 +657,13 @@ def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
         os.path.join(output_dir, "TPCA_Info.h5"), "w") as h5:
         p, lambdas, v, mu, U_flat = kendall_tpca(
             pre_shape_mat[idxes],
+            mu=mu,                        
             max_frechet_mean_iter=max_frechet_mean_iter,
             eta=eta,
             use_parallel=use_parallel,
             frechet_mean_tol=frechet_mean_tol,
             num_chunks=num_threads,
-            store_history=False,
-        )
+            store_history=False)
         h5.create_dataset("processed_idxes", data=idxes)
         h5.create_dataset("embedding",        data=p)
         h5.create_dataset("variances",        data=lambdas)

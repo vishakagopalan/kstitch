@@ -10,12 +10,14 @@ export_seurat_contours(
   contour_type = c("cell", "nucleus"),
   output_dir = NULL,
   cell_ids = NULL,
+  cell_groups = NULL,
   num_vertices = 50L,
   eta = 1,
   use_parallel = FALSE,
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
-  max_frechet_iter = 1000L
+  max_frechet_iter = 1000L,
+  return_results = TRUE
 )
 }
 \arguments{
@@ -29,13 +31,22 @@ cells present in the object.}
 
 \item{output_dir}{Directory for TPCA intermediate outputs. Optional. If
 \code{NULL} (the default), a temporary directory is
-created for the duration of the call and deleted
-automatically when \code{export_seurat_contours()}
-returns. If supplied, the directory is created if
-absent and left on disk afterward.}
+used. When \code{return_results = TRUE} the temp
+directory is deleted after the call; when
+\code{return_results = FALSE} it is kept so saved
+files remain accessible. An explicit path is created
+if absent and always left on disk.}
 
 \item{cell_ids}{Optional character vector of cell IDs to analyse.
-Defaults to all cells in \code{obj}.}
+Defaults to all cells in \code{obj}. Ignored when
+\code{cell_groups} is supplied.}
+
+\item{cell_groups}{Optional named character vector mapping cell IDs to
+group labels (e.g. \code{c(cell1 = "typeA", cell2 =
+                    "typeB")}). When supplied, TPCA is run separately per
+group and a named list of per-group results is
+returned. Each group is written to
+\code{<output_dir>/<group>_<contour_type>/}.}
 
 \item{num_vertices}{Integer. Vertices to sample per contour (default 50).}
 
@@ -48,15 +59,28 @@ Defaults to all cells in \code{obj}.}
 \item{frechet_mean_tol}{Numeric. Convergence tolerance for Frechet mean.}
 
 \item{max_frechet_iter}{Integer. Maximum Frechet mean iterations.}
+
+\item{return_results}{Logical. If \code{TRUE} (default), results are
+loaded into R and returned. If \code{FALSE}, results are written to
+disk and only the output paths are returned, with a message showing
+how to load them via \code{\link{load_kstitch_results}}.}
 }
 \value{
-A list in the format expected by \code{store_tpca_results()}. Its
-\code{output_dir} element is \code{NULL} if a temporary directory was
-used (already deleted by the time the call returns).
+When \code{return_results = TRUE}: a named list of per-group
+result lists (name \code{"all"} when \code{cell_groups} is
+\code{NULL}), each with \code{TPCA_Embedding}, \code{Info},
+\code{Metadata}, \code{contour_type}, \code{group}, and
+\code{is_groupwise}.
+When \code{return_results = FALSE}: a list with \code{output_paths}
+(named character vector) and \code{fields} describing the structure
+returned by \code{load_kstitch_results(..., type = "tpca")}.
 }
 \description{
 Accepts the raw segmentation list returned by \code{ReadXenium} or
 \code{ReadNanostring}, normalises the contour data frame, passes it
 directly to kendall_tpca (no intermediate parquet), runs TPCA, and returns a
 result ready for \code{store_tpca_results()}.
+}
+\seealso{
+\code{\link{load_kstitch_results}}, \code{\link{store_tpca_results}}
 }
