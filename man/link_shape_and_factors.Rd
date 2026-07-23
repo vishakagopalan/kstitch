@@ -59,8 +59,8 @@ A named list, one element per group, each containing:
 \item{CEP_Scores}{Cell x k matrix of expression canonical variates (CEP).}
 \item{CSP_Vectors}{Feature x k matrix of shape canonical weight vectors.}
 \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
-\item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
-\item{CEP_Self_Correlations}{Structure correlations of expression features with CEP scores.}
+\item{Shape_Corr_With_CSP}{Structure correlations of shape features with CSP scores.}
+\item{Exp_Corr_With_CEP}{Structure correlations of expression features with CEP scores.}
 \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 }

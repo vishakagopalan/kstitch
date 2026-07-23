@@ -26,6 +26,7 @@ input_files <- list(
   tpca_info        = "~/Downloads/Temp_Melanoma_PGA_Info.rds",
   cca_cell        = "~/Downloads/Temp_Melanoma_CCA_Cells.rds",
   cca_nucleus     = "~/Downloads/Temp_Melanoma_CCA_Nuclei.rds",
+  keratinocyte_genes = "~/Downloads/Temp_Keratinocyte_Genes.rds",
   keratinocytes_with_single_nucleus = "~/Downloads/Temp_Keratinocyte_Single_Nuclei.rds"
 )
 
@@ -45,6 +46,9 @@ tpca_info_list           <- readRDS(input_files$tpca_info)
 cca_cell_output         <- readRDS(input_files$cca_cell)
 cca_nucleus_output      <- readRDS(input_files$cca_nucleus)
 keratinocytes_with_single_nuclei <- readRDS(input_files$keratinocytes_with_single_nucleus)
+keratinocyte_genes <- readRDS(input_files$keratinocyte_genes)
+
+xenium_obj <- subset( xenium_obj, features = keratinocyte_genes )
 
 # ---- 1. Use the xenium object as-is (already keratinocyte subset) ----------
 
@@ -205,3 +209,4 @@ out_path <- file.path(out_dir, "kstitch_vignette_xenium.rds")
 saveRDS(obj, out_path)
 cat(sprintf("\nSaved to: %s\n", normalizePath(out_path)))
 cat(sprintf("File size: %.1f MB\n", file.size(out_path) / 1e6))
+

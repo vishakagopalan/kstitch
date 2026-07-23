@@ -38,8 +38,8 @@
 #'     \item{CEP_Scores}{Cell x k matrix of expression canonical variates (CEP).}
 #'     \item{CSP_Vectors}{Feature x k matrix of shape canonical weight vectors.}
 #'     \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
-#'     \item{CSP_Self_Correlations}{Structure correlations of shape features with CSP scores.}
-#'     \item{CEP_Self_Correlations}{Structure correlations of expression features with CEP scores.}
+#'     \item{Shape_Corr_With_CSP}{Structure correlations of shape features with CSP scores.}
+#'     \item{Exp_Corr_With_CEP}{Structure correlations of expression features with CEP scores.}
 #'     \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
 #'     \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
 #'   }
@@ -145,14 +145,20 @@ link_shape_and_factors <- function(obj,
     csp_self_cor <- cca$scores$corr.X.xscores
     cep_self_cor <- cca$scores$corr.Y.yscores
 
+    names(cca$scores)[match(c("corr.X.xscores", "corr.X.yscores",
+                          "corr.Y.xscores", "corr.Y.yscores"),
+                        names(cca$scores))] <-
+      c("corr.shape.with.csp", "corr.shape.with.cep",
+        "corr.exp.with.csp", "corr.exp.with.cep")
+
     results[[grp]] <- list(
       CC_Corr_Coefs         = cca$cor,
+      Shape_Corr_With_CSP = csp_self_cor,
+      Exp_Corr_With_CEP = cep_self_cor,
       CSP_Scores            = csp_scores,
       CEP_Scores            = cep_scores,
       CSP_Vectors           = csp_vectors,
       CEP_Vectors           = cep_vectors,
-      CSP_Self_Correlations = csp_self_cor,
-      CEP_Self_Correlations = cep_self_cor,
       Misc_CCA              = cca
     )
 

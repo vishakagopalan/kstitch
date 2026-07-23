@@ -30,13 +30,12 @@
 
   meta <- readr::read_csv(meta_path, show_col_types = FALSE)
   meta <- meta |>
-    dplyr::select(numpy_idx, cell_id) |>
     dplyr::mutate(numpy_idx = as.character(numpy_idx))
 
   kendall_tpca_df <- as.data.frame(kendall_tpca_mat) |>
     tibble::rownames_to_column("numpy_idx") |>
     dplyr::mutate(numpy_idx = as.character(numpy_idx)) |>
-    dplyr::inner_join(meta, by = "numpy_idx") |>
+    dplyr::inner_join(dplyr::select(meta,numpy_idx, cell_id), by = "numpy_idx") |>
     dplyr::select(-numpy_idx) |>
     tibble::column_to_rownames("cell_id")
 
@@ -55,7 +54,8 @@
       v_matrix            = v_matrix,
       frechet_mean        = frechet_mean,
       pre_shape_embedding = pre_shape
-    )
+    ),
+    Metadata = meta
   )
 }
 
