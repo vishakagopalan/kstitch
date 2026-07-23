@@ -20,7 +20,7 @@ test_that("pooled mode returns correct structure and high first canonical correl
 
   expect_true(all(c("CC_Corr_Coefs", "CSP_Scores", "CEP_Scores",
                     "CSP_Vectors", "CEP_Vectors",
-                    "CSP_Self_Correlations", "CEP_Self_Correlations",
+                    "Shape_Corr_With_CSP", "Exp_Corr_With_CEP",
                     "Misc_CCA") %in% names(grp)))
 
   k_out <- length(grp$CC_Corr_Coefs)
@@ -30,8 +30,8 @@ test_that("pooled mode returns correct structure and high first canonical correl
   expect_true(grp$CC_Corr_Coefs[1] > 0.7)
   expect_true(all(grepl("^CSP", colnames(grp$CSP_Scores))))
   expect_true(all(grepl("^CEP", colnames(grp$CEP_Scores))))
-  expect_false(is.null(grp$CSP_Self_Correlations))
-  expect_false(is.null(grp$CEP_Self_Correlations))
+  expect_false(is.null(grp$Shape_Corr_With_CSP))
+  expect_false(is.null(grp$Exp_Corr_With_CEP))
 })
 
 

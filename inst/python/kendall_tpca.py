@@ -559,6 +559,7 @@ def compute_pre_shape_embedding(
 
     pre_shape_mat = np.zeros((num_groups, 2, num_vertices_to_sample))
     cell_ids, idx_vals = [], []
+    scales = np.zeros(num_groups)
     areas         = np.zeros(num_groups)
     roundness     = np.zeros(num_groups)
     major_axes    = np.zeros(num_groups)
@@ -579,7 +580,7 @@ def compute_pre_shape_embedding(
             group[f"{x_vertex_col}_list"].values.to_numpy(),
             group[f"{y_vertex_col}_list"].values.to_numpy(),
         ])
-        (_, major_axes[idx], minor_axes[idx], eccentricity[idx],
+        (scales[idx], major_axes[idx], minor_axes[idx], eccentricity[idx],
          areas[idx], perimeters[idx], roundness[idx],
          convexity[idx]) = cell_features(x_orig)
 
@@ -594,6 +595,7 @@ def compute_pre_shape_embedding(
         "cell_id":    cell_ids,
         "numpy_idx":  np.array(idx_vals),
         "R_idx":      np.array(idx_vals) + 1,
+        "scale" : scales,
         "roundness":  roundness,
         "area":       areas,
         "major_axis": major_axes,

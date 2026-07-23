@@ -195,14 +195,14 @@ By default (`area_rescale = TRUE`), contours are rescaled by `sqrt(area)` so
 that the displayed size reflects true nuclear area — the size gradient you see
 across bins is real.
 
-# Note: area_rescale = TRUE is requested here, but this vignette's
-# tpca_nucleus_info sets output_dir = NA_character_ (no Shape_Metadata.csv.gz
-# is shipped with the vignette object). plot_csp_boundary_montage() checks
-# file.exists(file.path(output_dir, "Shape_Metadata.csv.gz")) before
-# rescaling, so area_rescale silently falls back to FALSE here -- contours
-# below are NOT area-rescaled despite the argument. On your own data, with a
-# real output_dir containing Shape_Metadata.csv.gz, area_rescale = TRUE will
-# work as documented.
+Note: area_rescale = TRUE is requested here, but this vignette's
+tpca_nucleus_info sets output_dir = NA_character_ (no Shape_Metadata.csv.gz
+is shipped with the vignette object). plot_csp_boundary_montage() checks
+file.exists(file.path(output_dir, "Shape_Metadata.csv.gz")) before
+rescaling, so area_rescale silently falls back to FALSE here -- contours
+below are NOT area-rescaled despite the argument. On your own data, with a
+real output_dir containing Shape_Metadata.csv.gz, area_rescale = TRUE will
+work as documented.
 
 ```{r montage, fig.height = 3.5}
 plot_csp_boundary_montage(

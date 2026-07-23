@@ -22,19 +22,18 @@
 #' @seealso \code{\link{link_shape_and_factors}}
 #' @export
 anchor_cca_signs <- function(group_result) {
-
-  csp_self_cor  <- group_result$CSP_Self_Correlations   # shape features x k
-  cep_self_cor  <- group_result$CEP_Self_Correlations   # NMF factors   x k
+  csp_self_cor  <- group_result$Shape_Corr_With_CSP   # shape features x k
+  cep_self_cor  <- group_result$Exp_Corr_With_CEP   # NMF factors   x k
   csp_scores    <- group_result$CSP_Scores              # cells x k
   cep_scores    <- group_result$CEP_Scores              # cells x k
   csp_vectors   <- group_result$CSP_Vectors             # shape features x k
   cep_vectors   <- group_result$CEP_Vectors             # NMF factors   x k
 
   # cross-loading blocks from Misc_CCA
-  cep_cor_with_csp <- group_result$Misc_CCA$scores$corr.Y.xscores  # NMF x k
-  csp_cor_with_cep <- group_result$Misc_CCA$scores$corr.X.yscores  # shape x k
+  cep_cor_with_csp <- group_result$Misc_CCA$scores$corr.exp.with.csp  # NMF x k
+  csp_cor_with_cep <- group_result$Misc_CCA$scores$corr.shape.with.cep  # shape x k
 
-  k               <- ncol(csp_scores)
+  k <- ncol(csp_scores)
   anchor_features <- character(k)
   names(anchor_features) <- colnames(csp_scores)   # CSP1, CSP2, ...
 
@@ -58,14 +57,14 @@ anchor_cca_signs <- function(group_result) {
     }
   }
 
-  group_result$CSP_Self_Correlations                    <- csp_self_cor
-  group_result$CEP_Self_Correlations                    <- cep_self_cor
+  group_result$Shape_Corr_With_CSP                    <- csp_self_cor
+  group_result$Exp_Corr_With_CEP                    <- cep_self_cor
   group_result$CSP_Scores                               <- csp_scores
   group_result$CEP_Scores                               <- cep_scores
   group_result$CSP_Vectors                              <- csp_vectors
   group_result$CEP_Vectors                              <- cep_vectors
-  group_result$Misc_CCA$scores$corr.Y.xscores           <- cep_cor_with_csp
-  group_result$Misc_CCA$scores$corr.X.yscores           <- csp_cor_with_cep
+  group_result$Misc_CCA$scores$corr.exp.with.csp           <- cep_cor_with_csp
+  group_result$Misc_CCA$scores$corr.shape.with.cep           <- csp_cor_with_cep
   group_result$Anchor_Features                          <- anchor_features
 
   group_result

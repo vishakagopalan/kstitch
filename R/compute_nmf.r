@@ -131,9 +131,9 @@
 
   # gene filter
   data_mat          <- obj[[assay_name]]@layers[[count_matrix_layer]]
-  rownames(data_mat) <- Seurat::Features(obj)
+  rownames(data_mat) <- SeuratObject::Features(obj)
   colnames(data_mat) <- Seurat::Cells(obj)
-  genes_to_use      <- names(which(rowMeans(data_mat > 0) >= gene_pct_threshold))
+  genes_to_use      <- names(which(Matrix::rowMeans(data_mat > 0) >= gene_pct_threshold))
   obj               <- subset(obj, features = genes_to_use)
   rm(data_mat)
 
@@ -347,16 +347,16 @@ compute_nmf <- function(obj,
 
   integration_method <- match.arg(integration_method)
 
-  if (!is.null(group.by) && !group.by %in% colnames(obj[["meta.data"]])) {
+  if (!is.null(group.by) && !group.by %in% colnames(obj@meta.data)) {
     stop(sprintf("`group.by` column '%s' not found in obj@meta.data.", group.by))
   }
 
-  all_cells <- rownames(obj[["meta.data"]])
+  all_cells <- rownames(obj@meta.data)
 
   if (is.null(group.by)) {
     groups <- list(all = all_cells)
   } else {
-    meta_vec <- obj[["meta.data"]][all_cells, group.by]
+    meta_vec <- obj@meta.data[all_cells, group.by]
     groups   <- split(all_cells, meta_vec)
   }
 

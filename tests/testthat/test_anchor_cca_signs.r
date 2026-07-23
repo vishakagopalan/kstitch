@@ -15,14 +15,21 @@ make_group_result <- function(n = 150, k_shape = 8, k_nmf = 6, seed = 1) {
   csp_vectors <- cca$xcoef;          colnames(csp_vectors) <- paste0("CSP", seq_len(k))
   cep_vectors <- cca$ycoef;          colnames(cep_vectors) <- paste0("CEP", seq_len(k))
 
+  names(cca$scores)[match(c("corr.X.xscores", "corr.X.yscores",
+                          "corr.Y.xscores", "corr.Y.yscores"),
+                        names(cca$scores))] <-
+      c("corr.shape.with.csp", "corr.shape.with.cep",
+        "corr.exp.with.csp", "corr.exp.with.cep")
+
+
   list(
     CC_Corr_Coefs         = cca$cor,
     CSP_Scores            = csp_scores,
     CEP_Scores            = cep_scores,
     CSP_Vectors           = csp_vectors,
     CEP_Vectors           = cep_vectors,
-    CSP_Self_Correlations = cca$scores$corr.X.xscores,
-    CEP_Self_Correlations = cca$scores$corr.Y.yscores,
+    Shape_Corr_With_CSP  = cca$scores$corr.shape.with.csp,
+    Exp_Corr_With_CEP  = cca$scores$corr.exp.with.cep,
     Misc_CCA              = cca
   )
 }
@@ -38,7 +45,7 @@ test_that("anchor_cca_signs returns Anchor_Features with correct names and value
   expect_equal(names(out$Anchor_Features), paste0("CSP", seq_len(k)))
 
   # each anchor feature name must be a real shape feature
-  shape_features <- rownames(out$CSP_Self_Correlations)
+  shape_features <- rownames(out$Shape_Corr_With_CSP)
   expect_true(all(out$Anchor_Features %in% shape_features))
 })
 
@@ -50,7 +57,7 @@ test_that("after anchoring, anchor feature loads positively on each component", 
   k <- length(out$CC_Corr_Coefs)
   for (cc_idx in seq_len(k)) {
     anchor <- out$Anchor_Features[cc_idx]
-    expect_gte(out$CSP_Self_Correlations[anchor, cc_idx], 0)
+    expect_gte(out$Shape_Corr_With_CSP[anchor, cc_idx], 0)
   }
 })
 
@@ -62,7 +69,7 @@ test_that("anchor feature is the one with highest absolute structure correlation
   k <- length(out$CC_Corr_Coefs)
   for (cc_idx in seq_len(k)) {
     anchor      <- out$Anchor_Features[cc_idx]
-    abs_cors    <- abs(out$CSP_Self_Correlations[, cc_idx])
+    abs_cors    <- abs(out$Shape_Corr_With_CSP[, cc_idx])
     expect_equal(unname(as.character(anchor)), names(which.max(abs_cors)))
   }
 })
