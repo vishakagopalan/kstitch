@@ -99,3 +99,84 @@ test_that(".compute_kotliar_stability returns named numeric for valid input", {
   expect_true(is.numeric(result))
   expect_true(result[["silhouette"]] >= -1 && result[["silhouette"]] <= 1)
 })
+
+test_that("compute_nmf attaches group and is_groupwise fields — single group", {
+  obj <- make_seurat_stub(paste0("cell_", 1:60))
+
+  with_mocked_bindings(
+    .run_nmf_one_group = function(...) empty_fit,
+    .package = "kstitch",
+    {
+      with_mocked_bindings(
+        subset = function(x, ...) x,
+        .package = "base",
+        {
+          res <- compute_nmf(obj, assay_name = "RNA", verbose = FALSE)
+        }
+      )
+    }
+  )
+
+  expect_equal(res$all$group, "all")
+  expect_false(res$all$is_groupwise)
+})
+
+test_that("compute_nmf attaches group and is_groupwise fields — grouped", {
+  obj <- make_seurat_stub(
+    cell_names = paste0("cell_", 1:100),
+    meta_cols  = list(celltype = rep(c("TypeA", "TypeB"), each = 50))
+  )
+
+  with_mocked_bindings(
+    .run_nmf_one_group = function(...) empty_fit,
+    .package = "kstitch",
+    {
+      with_mocked_bindings(
+        subset = function(x, ...) x,
+        .package = "base",
+        {
+          res <- compute_nmf(obj, assay_name = "RNA", group.by = "celltype",
+                             verbose = FALSE)
+        }
+      )
+    }
+  )
+
+  expect_equal(res$TypeA$group, "TypeA")
+  expect_equal(res$TypeB$group, "TypeB")
+  expect_true(res$TypeA$is_groupwise)
+  expect_true(res$TypeB$is_groupwise)
+})
+
+test_that("compute_nmf return_results = FALSE writes RDS files and returns paths", {
+  obj <- make_seurat_stub(
+    cell_names = paste0("cell_", 1:100),
+    meta_cols  = list(celltype = rep(c("TypeA", "TypeB"), each = 50))
+  )
+  out_dir <- file.path(tempdir(), paste0("test_nmf_", kstitch:::.random_id()))
+
+  with_mocked_bindings(
+    .run_nmf_one_group = function(...) empty_fit,
+    .package = "kstitch",
+    {
+      with_mocked_bindings(
+        subset = function(x, ...) x,
+        .package = "base",
+        {
+          res <- compute_nmf(obj, assay_name = "RNA", group.by = "celltype",
+                             verbose = FALSE, return_results = FALSE,
+                             output_dir = out_dir)
+        }
+      )
+    }
+  )
+
+  expect_named(res, "output_paths")
+  expect_named(res$output_paths, c("TypeA", "TypeB"), ignore.order = TRUE)
+  expect_true(all(file.exists(res$output_paths)))
+
+  loaded <- load_kstitch_results(res$output_paths[["TypeA"]], type = "nmf")
+  expect_true(is.list(loaded))
+
+  unlink(out_dir, recursive = TRUE)
+})

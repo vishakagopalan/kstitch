@@ -1,51 +1,49 @@
-#' Link shape and gene-expression embeddings via CCA
+#' Link cell shape and gene expression via Canonical Correlation Analysis
 #'
-#' Runs canonical correlation analysis (CCA) between a morphology embedding
-#' (e.g. TPCA shape PCs) and a gene-expression dimensionality reduction
-#' (e.g. NMF factors, PCA scores, or any cell x feature matrix), optionally
-#' stratified by a grouping variable. Results are returned as a named list
-#' intended to be stored in \code{obj@misc$kstitch} via
-#' \code{\link{store_kstitch_results}}.
+#' Runs CCA between a shape PC matrix and an expression factor matrix,
+#' optionally per cell group. Results are returned as a named list of per-group
+#' CCA outputs, or serialized to disk when \code{return_results = FALSE}.
 #'
-#' @param obj A Seurat v5 object. Used to resolve \code{group.by} via
-#'   \code{@meta.data}; cell names are taken from \code{colnames(obj)}.
-#' @param expr_mat Numeric matrix of gene-expression embeddings (e.g. NMF
-#'   factors, PCA scores), cells x features, with cell names as row names.
-#'   Any dimensionality reduction method is supported; NMF-specific
-#'   post-processing (e.g. \code{\link{prioritize_cca_components}}) should
-#'   be applied separately after this function returns.
-#' @param shape_mat Numeric matrix of shape embeddings (e.g. TPCA scores),
-#'   cells x features, with cell names as row names.
-#' @param group.by Character scalar naming a column in \code{obj@meta.data} to
-#'   stratify by. CCA is run once per unique value. \code{NULL} (default) pools
-#'   all cells into a single group labelled \code{"all"}.
-#' @param min_cells Integer. Groups with fewer cells (after intersection) are
-#'   skipped with a message. Default 100.
-#' @param scale Logical. Whether to z-score both matrices before CCA.
-#'   Default \code{TRUE}.
+#' @param obj A Seurat v5 object. Used only for \code{@@meta.data} (group
+#'   resolution and cell-name intersection); never mutated.
+#' @param expr_mat Numeric matrix (cells x features). Expression-side input,
+#'   e.g. NMF factor scores. Row names must match Seurat cell names.
+#' @param shape_mat Numeric matrix (cells x shape PCs). Shape-side input from
+#'   TPCA. Row names must match Seurat cell names.
+#' @param group.by Character or NULL. Column in \code{obj@@meta.data} defining
+#'   groups. When NULL, all cells are treated as a single group returned under
+#'   the key \code{"all"}.
+#' @param min_cells Integer. Groups with fewer cells are skipped (default 100).
+#' @param scale Logical. Whether to z-score \code{shape_mat} and
+#'   \code{expr_mat} before CCA (default TRUE).
 #' @param test_significance Logical. Whether to compute deflation-based
-#'   permutation p-values via \code{\link{cca_pvalues}} for each group.
-#'   Default \code{FALSE}.
-#' @param nperm Integer. Number of permutations passed to \code{cca_pvalues}
-#'   when \code{test_significance = TRUE}. Default 1000L.
-#' @param perm_seed Optional integer seed for reproducibility of permutations.
-#' @param verbose Logical. Print progress messages. Default \code{FALSE}.
+#'   permutation p-values via \code{cca_pvalues()} (default FALSE).
+#' @param nperm Integer. Number of permutations for significance testing.
+#' @param perm_seed Integer or NULL. RNG seed for permutation testing.
+#' @param verbose Logical. Whether to emit per-group progress messages
+#'   (default FALSE).
+#' @param return_results Logical. When TRUE (default) results are returned as a
+#'   named list. When FALSE, each group's result is serialized to
+#'   \code{<output_dir>/<group>.rds} and a named list of file paths is returned
+#'   instead.
+#' @param output_dir Character or NULL. Directory for serialized output when
+#'   \code{return_results = FALSE}. When NULL a temporary directory is created
+#'   automatically and is \emph{not} cleaned up on exit. Ignored when
+#'   \code{return_results = TRUE}.
 #'
-#' @return A named list, one element per group, each containing:
-#'   \describe{
-#'     \item{CC_Corr_Coefs}{Canonical correlations, length k.}
-#'     \item{CSP_Scores}{Cell x k matrix of shape canonical variates (CSP).}
-#'     \item{CEP_Scores}{Cell x k matrix of expression canonical variates (CEP).}
-#'     \item{CSP_Vectors}{Feature x k matrix of shape canonical weight vectors.}
-#'     \item{CEP_Vectors}{Feature x k matrix of expression canonical weight vectors.}
-#'     \item{Shape_Corr_With_CSP}{Structure correlations of shape features with CSP scores.}
-#'     \item{Exp_Corr_With_CEP}{Structure correlations of expression features with CEP scores.}
-#'     \item{Anchor_Features}{Named character vector recording the anchor feature per component.}
-#'     \item{Misc_CCA}{Full \code{run_cca()} output for downstream use.}
-#'   }
+#' @return When \code{return_results = TRUE}: a named list of per-group result
+#'   lists. Each entry contains \code{CC_Corr_Coefs}, \code{Shape_Corr_With_CSP},
+#'   \code{Exp_Corr_With_CEP}, \code{CSP_Scores}, \code{CEP_Scores},
+#'   \code{CSP_Vectors}, \code{CEP_Vectors}, \code{Misc_CCA},
+#'   \code{Anchor_Features}, \code{group}, and \code{is_groupwise}. If
+#'   \code{test_significance = TRUE}, also \code{P_Value_Info}. Single-group
+#'   results are returned under the key \code{"all"}.
 #'
-#' @seealso \code{\link{run_cca}}, \code{\link{cca_pvalues}},
-#'   \code{\link{anchor_cca_signs}}, \code{\link{prioritize_cca_components}}
+#'   When \code{return_results = FALSE}: a list with element
+#'   \code{output_paths}, a named character vector mapping group names to RDS
+#'   file paths.
+#'
+#' @seealso \code{\link{store_kstitch_results}}, \code{\link{load_kstitch_results}}
 #' @export
 link_shape_and_factors <- function(obj,
                                    expr_mat,
@@ -56,10 +54,11 @@ link_shape_and_factors <- function(obj,
                                    test_significance = FALSE,
                                    nperm             = 1000L,
                                    perm_seed         = NULL,
-                                   verbose           = FALSE) {
+                                   verbose           = FALSE,
+                                   return_results    = TRUE,
+                                   output_dir        = NULL) {
 
-  # --- input checks -----------------------------------------------------------
-
+  # ---- input checks --------------------------------------------------------
   stopifnot(
     is.matrix(expr_mat) || is.data.frame(expr_mat),
     is.matrix(shape_mat) || is.data.frame(shape_mat),
@@ -77,8 +76,15 @@ link_shape_and_factors <- function(obj,
     }
   }
 
-  # --- resolve cells and groups -----------------------------------------------
+  # ---- resolve output directory --------------------------------------------
+  if (!return_results && is.null(output_dir)) {
+    output_dir <- file.path(tempdir(), paste0("kstitch_cca_", .random_id()))
+    dir.create(output_dir, recursive = TRUE)
+  } else if (!is.null(output_dir)) {
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+  }
 
+  # ---- resolve cells and groups --------------------------------------------
   cells_all <- Reduce(intersect, list(
     rownames(obj@meta.data),
     rownames(expr_mat),
@@ -90,6 +96,8 @@ link_shape_and_factors <- function(obj,
          "and rownames(shape_mat). Check that row names match Seurat cell names.")
   }
 
+  is_groupwise <- !is.null(group.by)
+
   if (is.null(group.by)) {
     groups <- list(all = cells_all)
   } else {
@@ -97,8 +105,7 @@ link_shape_and_factors <- function(obj,
     groups   <- split(cells_all, meta_vec)
   }
 
-  # --- per-group CCA ----------------------------------------------------------
-
+  # ---- per-group CCA -------------------------------------------------------
   results <- list()
 
   for (grp in names(groups)) {
@@ -146,27 +153,29 @@ link_shape_and_factors <- function(obj,
     cep_self_cor <- cca$scores$corr.Y.yscores
 
     names(cca$scores)[match(c("corr.X.xscores", "corr.X.yscores",
-                          "corr.Y.xscores", "corr.Y.yscores"),
-                        names(cca$scores))] <-
+                              "corr.Y.xscores", "corr.Y.yscores"),
+                            names(cca$scores))] <-
       c("corr.shape.with.csp", "corr.shape.with.cep",
-        "corr.exp.with.csp", "corr.exp.with.cep")
+        "corr.exp.with.csp",   "corr.exp.with.cep")
 
-    results[[grp]] <- list(
-      CC_Corr_Coefs         = cca$cor,
+    res <- list(
+      CC_Corr_Coefs       = cca$cor,
       Shape_Corr_With_CSP = csp_self_cor,
-      Exp_Corr_With_CEP = cep_self_cor,
-      CSP_Scores            = csp_scores,
-      CEP_Scores            = cep_scores,
-      CSP_Vectors           = csp_vectors,
-      CEP_Vectors           = cep_vectors,
-      Misc_CCA              = cca
+      Exp_Corr_With_CEP   = cep_self_cor,
+      CSP_Scores          = csp_scores,
+      CEP_Scores          = cep_scores,
+      CSP_Vectors         = csp_vectors,
+      CEP_Vectors         = cep_vectors,
+      Misc_CCA            = cca,
+      group               = grp,
+      is_groupwise        = is_groupwise
     )
 
     if (test_significance) {
       if (verbose) message(sprintf(
         "  Computing permutation p-values for group '%s' (%d perms) ...", grp, nperm
       ))
-      results[[grp]][["P_Value_Info"]] <- cca_pvalues(
+      res[["P_Value_Info"]] <- cca_pvalues(
         X       = X,
         Y       = Y,
         nperm   = nperm,
@@ -175,12 +184,18 @@ link_shape_and_factors <- function(obj,
       )
     }
 
-    results[[grp]] <- anchor_cca_signs(results[[grp]])
+    results[[grp]] <- anchor_cca_signs(res)
   }
 
   if (length(results) == 0) {
     warning("All groups were skipped (all had fewer than `min_cells` cells). ",
             "Returning an empty list.")
+  }
+
+  # ---- return_results = FALSE ----------------------------------------------
+  if (!return_results) {
+    output_paths <- .serialize_group_results(results, output_dir, type = "cca")
+    return(list(output_paths = output_paths))
   }
 
   results

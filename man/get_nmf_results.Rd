@@ -2,29 +2,33 @@
 % Please edit documentation in R/store_nmf_results.R
 \name{get_nmf_results}
 \alias{get_nmf_results}
-\title{Retrieve NMF fit metadata for a group from a Seurat object}
+\title{Retrieve NMF results from a Seurat object}
 \usage{
-get_nmf_results(obj, group, reduction_prefix = "nmf_")
+get_nmf_results(obj, group = NULL, reduction_prefix = "nmf_")
 }
 \arguments{
-\item{obj}{A Seurat v5 object with NMF results stored via
-\code{\link{store_nmf_results}}.}
+\item{obj}{A Seurat v5 object.}
 
-\item{group}{Character. The group whose fit metadata to retrieve, matching
-the name used in \code{obj[["nmf_<group>"]]}.}
+\item{group}{Character or NULL. Name of the group to retrieve (e.g.
+\code{"keratinocyte"} or \code{"all"} for single-group results). When
+NULL, all reductions with the given prefix are returned as a named list.}
 
-\item{reduction_prefix}{Character. Must match the prefix used in
-\code{\link{store_nmf_results}}. Default \code{"nmf_"}.}
+\item{reduction_prefix}{Character. Prefix used when storing reductions
+(default \code{"nmf_"}). Must match the prefix passed to
+\code{store_nmf_results()}.}
 }
 \value{
-A list with \code{Fit_Error}, \code{Fit_Summary}, and
-\code{Factor_Gene_List}.
+When \code{group} is specified: the \code{@misc} list for that
+group's NMF reduction, containing \code{Fit_Error}, \code{Fit_Summary},
+and \code{Factor_Gene_List}.
+
+When \code{group = NULL}: a named list of such \code{@misc} lists, one
+per NMF reduction found in \code{obj}, keyed by group name.
 }
 \description{
-Convenience accessor for the \code{@misc} of an
-\code{obj[["nmf_<group>"]]} reduction created by
-\code{\link{store_nmf_results}}.
+Extracts the \code{@misc} slot of one or all NMF DimReduc objects written
+by \code{\link{store_nmf_results}}.
 }
 \seealso{
-\code{\link{store_nmf_results}}
+\code{\link{store_nmf_results}}, \code{\link{compute_nmf}}
 }

@@ -11,7 +11,7 @@ plot_csp_boundary_montage(
   num_bins = 10L,
   num_cells_for_boundary = 6L,
   pcs_to_use = 1:10,
-  area_rescale = TRUE,
+  norm_rescale = FALSE,
   reconstruction_pcs = NULL,
   line_colour = "steelblue"
 )
@@ -36,15 +36,15 @@ per bin. Default 6L.}
 \item{pcs_to_use}{Integer vector. Which shape PCs to use for medoid
 distance computation. Default \code{1:10}.}
 
-\item{area_rescale}{Logical. Rescale contours by \code{sqrt(area)} to
-reflect true cell size. Default \code{TRUE}.}
-
 \item{reconstruction_pcs}{Integer. Number of PCA components to use for
 shape reconstruction when pre-shape embedding is unavailable.
 Default = all available.}
 
 \item{line_colour}{Character. Colour for contour outlines. Default
 \code{"steelblue"}.}
+
+\item{area_rescale}{Logical. Rescale contours by \code{sqrt(area)} to
+reflect true cell size. Default \code{TRUE}.}
 }
 \value{
 A \code{ggplot} object. The underlying coordinate data frame is
