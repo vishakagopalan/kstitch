@@ -269,7 +269,7 @@ run_tpca <- function(boundary_parquet_path,
   # allocating a plain temp dir ourselves; the OS will reclaim it eventually.
   if (!return_results && is.null(output_dir)) {
     work_dir    <- file.path(tempdir(), paste0("kstitch_tpca_", .random_id()))
-    dir.create(work_dir, recursive = TRUE)
+    dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
     resolved    <- list(path = work_dir, is_temp = FALSE)
   } else {
     resolved <- .resolve_tpca_output_dir(output_dir)

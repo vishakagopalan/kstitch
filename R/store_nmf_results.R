@@ -106,28 +106,47 @@ store_nmf_results <- function(obj,
   obj
 }
 
-
-#' Retrieve NMF fit metadata for a group from a Seurat object
+#' Retrieve NMF results from a Seurat object
 #'
-#' Convenience accessor for the \code{@misc} of an
-#' \code{obj[["nmf_<group>"]]} reduction created by
-#' \code{\link{store_nmf_results}}.
+#' Extracts the \code{@@misc} slot of one or all NMF DimReduc objects written
+#' by \code{\link{store_nmf_results}}.
 #'
-#' @param obj A Seurat v5 object with NMF results stored via
-#'   \code{\link{store_nmf_results}}.
-#' @param group Character. The group whose fit metadata to retrieve, matching
-#'   the name used in \code{obj[["nmf_<group>"]]}.
-#' @param reduction_prefix Character. Must match the prefix used in
-#'   \code{\link{store_nmf_results}}. Default \code{"nmf_"}.
+#' @param obj A Seurat v5 object.
+#' @param group Character or NULL. Name of the group to retrieve (e.g.
+#'   \code{"keratinocyte"} or \code{"all"} for single-group results). When
+#'   NULL, all reductions with the given prefix are returned as a named list.
+#' @param reduction_prefix Character. Prefix used when storing reductions
+#'   (default \code{"nmf_"}). Must match the prefix passed to
+#'   \code{store_nmf_results()}.
 #'
-#' @return A list with \code{Fit_Error}, \code{Fit_Summary}, and
-#'   \code{Factor_Gene_List}.
-#' @seealso \code{\link{store_nmf_results}}
+#' @return When \code{group} is specified: the \code{@@misc} list for that
+#'   group's NMF reduction, containing \code{Fit_Error}, \code{Fit_Summary},
+#'   and \code{Factor_Gene_List}.
+#'
+#'   When \code{group = NULL}: a named list of such \code{@@misc} lists, one
+#'   per NMF reduction found in \code{obj}, keyed by group name.
+#'
+#' @seealso \code{\link{store_nmf_results}}, \code{\link{compute_nmf}}
 #' @export
-get_nmf_results <- function(obj, group, reduction_prefix = "nmf_") {
+get_nmf_results <- function(obj, group = NULL, reduction_prefix = "nmf_") {
+  if (is.null(group)) {
+    all_reductions <- Seurat::Reductions(obj) %||% character(0)
+    nmf_reductions <- all_reductions[startsWith(all_reductions, reduction_prefix)]
+    if (length(nmf_reductions) == 0) {
+      stop(sprintf(
+        "No reductions with prefix '%s' found in obj. Run store_nmf_results() first.",
+        reduction_prefix
+      ))
+    }
+    grp_names <- sub(paste0("^", reduction_prefix), "", nmf_reductions)
+    out <- stats::setNames(
+      lapply(nmf_reductions, function(r) obj[[r]]@misc),
+      grp_names
+    )
+    return(out)
+  }
 
   reduction_name <- paste0(reduction_prefix, group)
-
   if (!reduction_name %in% Seurat::Reductions(obj)) {
     stop(sprintf(
       "Reduction '%s' not found in obj. Available reductions: %s.",
@@ -135,6 +154,6 @@ get_nmf_results <- function(obj, group, reduction_prefix = "nmf_") {
       paste(Seurat::Reductions(obj), collapse = ", ")
     ))
   }
-
   obj[[reduction_name]]@misc
 }
+

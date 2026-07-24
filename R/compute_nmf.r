@@ -272,78 +272,86 @@
 
 # ---- exported function ------------------------------------------------------
 
-#' Run LIGER NMF factorization per group
+# ---- compute_nmf() ---------------------------------------------------------
+
+#' Run NMF on a Seurat object, optionally per cell group
 #'
-#' Preprocesses a Seurat object, runs online iNMF or consensus iNMF via
-#' \pkg{rliger}, and returns factor loadings, cell embeddings, top genes per
-#' factor, and a fit-summary table (including a Kotliar-style stability score).
-#' When \code{group.by} is supplied, factorization runs independently for each
-#' unique value of that metadata column.
+#' Wraps \code{rliger} consensus or online iNMF with Kotliar stability scoring.
+#' Results are returned as a named list of per-group fit objects, or serialized
+#' to disk when \code{return_results = FALSE}.
 #'
 #' @param obj A Seurat v5 object.
-#' @param assay_name Name of the assay to use.
-#' @param group.by Character scalar naming a column in \code{obj@meta.data} to
-#'   stratify by. \code{NULL} (default) pools all cells.
-#' @param num_top_genes_per_factor Number of top genes to record per factor.
-#'   Default 100.
-#' @param batch_var Optional metadata column for dataset/batch labels passed to
-#'   rliger functions.
-#' @param count_matrix_layer Layer name for raw counts. Default \code{"counts"}.
-#' @param min_cells Minimum cells required to run factorization for a group.
-#'   Default 100.
-#' @param gene_pct_threshold Minimum fraction of cells expressing a gene.
-#'   Default 0.01.
-#' @param use_normalized_factor_scores If \code{TRUE} (default), return
-#'   quantile-normalised embeddings and loadings.
-#' @param default_num_factors Starting k. Default 30.
-#' @param nCores Number of cores. Default 8.
-#' @param normalize_params Extra arguments for \code{rliger::normalize()}.
-#' @param selectGenes_params Extra arguments for \code{rliger::selectGenes()}.
-#' @param scaleNotCenter_params Extra arguments for \code{rliger::scaleNotCenter()}.
-#' @param runCINMF_params Extra arguments for \code{rliger::runCINMF()}.
-#' @param quantileNorm_params Extra arguments for \code{rliger::quantileNorm()}.
-#' @param integration_method \code{"consensus"} (default) or \code{"online"}.
-#' @param stability_n_runs Number of repeated online fits for stability scoring.
-#'   Default 10.
-#' @param stability_seed Starting seed for stability runs. Default 1.
-#' @param runOnlineINMF_params Extra arguments for \code{rliger::runOnlineINMF()}.
-#' @param verbose Logical. Print group progress. Default \code{TRUE}.
+#' @param assay_name Character. Name of the assay to use.
+#' @param group.by Character or NULL. Column in \code{obj@@meta.data} defining
+#'   groups. When NULL, all cells are treated as a single group returned under
+#'   the key \code{"all"}.
+#' @param num_top_genes_per_factor Integer. Number of top genes to record per
+#'   NMF factor in the \code{Factor_Gene_List} output.
+#' @param batch_var Character or NULL. Column in \code{obj@@meta.data} to use
+#'   as a batch variable for iNMF integration.
+#' @param count_matrix_layer Character. Layer in the assay containing raw
+#'   counts (default \code{"counts"}).
+#' @param min_cells Integer. Groups with fewer cells are skipped.
+#' @param gene_pct_threshold Numeric in \code{[0, 1]}. Minimum fraction of cells
+#'   expressing a gene for it to be retained.
+#' @param use_normalized_factor_scores Logical. Whether to use quantile-
+#'   normalised factor scores (default TRUE).
+#' @param default_num_factors Integer. Number of NMF factors when automatic
+#'   selection is not triggered.
+#' @param nCores Integer. Number of cores passed to rliger.
+#' @param normalize_params,selectGenes_params,scaleNotCenter_params,runCINMF_params,quantileNorm_params,runOnlineINMF_params
+#'   Named lists of additional arguments forwarded to the corresponding rliger
+#'   functions.
+#' @param integration_method Character. One of \code{"consensus"} (default) or
+#'   \code{"online"}.
+#' @param stability_n_runs Integer. Number of NMF runs for Kotliar stability
+#'   scoring.
+#' @param stability_seed Integer. RNG seed for stability runs.
+#' @param verbose Logical. Whether to emit progress messages (default TRUE).
+#' @param return_results Logical. When TRUE (default) results are loaded into
+#'   memory and returned as a named list. When FALSE, each group's result is
+#'   serialized to \code{<output_dir>/<group>.rds} and a named list of file
+#'   paths is returned instead.
+#' @param output_dir Character or NULL. Directory for serialized output when
+#'   \code{return_results = FALSE}. When NULL a temporary directory is created
+#'   automatically and is \emph{not} cleaned up on exit (so the files remain
+#'   accessible). Ignored when \code{return_results = TRUE}.
 #'
-#' @return A named list, one entry per group (or \code{"all"} when
-#'   \code{group.by = NULL}), each containing:
-#'   \describe{
-#'     \item{Factor_Gene_List}{Named list of top genes per factor.}
-#'     \item{NMF_Matrix}{Cell x factor loading matrix.}
-#'     \item{NMF_Loading}{Gene x factor loading matrix.}
-#'     \item{Fit_Error}{Reconstruction error for the final fit.}
-#'     \item{Fit_Summary}{One-row data frame: Method, k, Stability_Score,
-#'       Entropy, Reconstruction_Error, N_Stability_Runs.}
-#'   }
+#' @return When \code{return_results = TRUE}: a named list of per-group fit
+#'   lists. Each entry carries \code{group} (character) and
+#'   \code{is_groupwise} (logical) fields in addition to the NMF outputs from
+#'   \code{.run_nmf_one_group()}. Single-group results are returned under the
+#'   key \code{"all"}.
 #'
-#' @importFrom stats hclust as.dist cutree cor median sd
-#' @importFrom cluster silhouette
+#'   When \code{return_results = FALSE}: a list with element
+#'   \code{output_paths}, a named character vector mapping group names to RDS
+#'   file paths.
+#'
+#' @seealso \code{\link{store_nmf_results}}, \code{\link{load_kstitch_results}}
 #' @export
 compute_nmf <- function(obj,
                         assay_name,
-                        group.by                  = NULL,
-                        num_top_genes_per_factor  = 100,
-                        batch_var                 = NULL,
-                        count_matrix_layer        = "counts",
-                        min_cells                 = 100,
-                        gene_pct_threshold        = 0.01,
+                        group.by                     = NULL,
+                        num_top_genes_per_factor     = 100,
+                        batch_var                    = NULL,
+                        count_matrix_layer           = "counts",
+                        min_cells                    = 100,
+                        gene_pct_threshold           = 0.01,
                         use_normalized_factor_scores = TRUE,
-                        default_num_factors       = 30,
-                        nCores                    = 8,
-                        normalize_params          = list(),
-                        selectGenes_params        = list(),
-                        scaleNotCenter_params     = list(),
-                        runCINMF_params           = list(),
-                        quantileNorm_params       = list(),
-                        integration_method        = c("consensus", "online"),
-                        stability_n_runs          = 10L,
-                        stability_seed            = 1L,
-                        runOnlineINMF_params      = list(),
-                        verbose                   = TRUE) {
+                        default_num_factors          = 30,
+                        nCores                       = 8,
+                        normalize_params             = list(),
+                        selectGenes_params           = list(),
+                        scaleNotCenter_params        = list(),
+                        runCINMF_params              = list(),
+                        quantileNorm_params          = list(),
+                        integration_method           = c("consensus", "online"),
+                        stability_n_runs             = 10L,
+                        stability_seed               = 1L,
+                        runOnlineINMF_params         = list(),
+                        verbose                      = TRUE,
+                        return_results               = TRUE,
+                        output_dir                   = NULL) {
 
   integration_method <- match.arg(integration_method)
 
@@ -351,8 +359,16 @@ compute_nmf <- function(obj,
     stop(sprintf("`group.by` column '%s' not found in obj@meta.data.", group.by))
   }
 
-  all_cells <- rownames(obj@meta.data)
+  # ---- resolve output directory --------------------------------------------
+  if (!return_results && is.null(output_dir)) {
+    output_dir <- file.path(tempdir(), paste0("kstitch_nmf_", .random_id()))
+    dir.create(output_dir, recursive = TRUE)
+  } else if (!is.null(output_dir)) {
+    if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+  }
 
+  # ---- groups --------------------------------------------------------------
+  all_cells <- rownames(obj@meta.data)
   if (is.null(group.by)) {
     groups <- list(all = all_cells)
   } else {
@@ -360,6 +376,9 @@ compute_nmf <- function(obj,
     groups   <- split(all_cells, meta_vec)
   }
 
+  is_groupwise <- !is.null(group.by)
+
+  # ---- per-group NMF -------------------------------------------------------
   results <- list()
 
   for (grp in names(groups)) {
@@ -368,7 +387,7 @@ compute_nmf <- function(obj,
     grp_cells <- groups[[grp]]
     grp_obj   <- subset(obj, cells = grp_cells)
 
-    results[[grp]] <- .run_nmf_one_group(
+    fit <- .run_nmf_one_group(
       obj                          = grp_obj,
       assay_name                   = assay_name,
       num_top_genes_per_factor     = num_top_genes_per_factor,
@@ -389,6 +408,17 @@ compute_nmf <- function(obj,
       stability_seed               = stability_seed,
       runOnlineINMF_params         = runOnlineINMF_params
     )
+
+    fit$group        <- grp
+    fit$is_groupwise <- is_groupwise
+
+    results[[grp]] <- fit
+  }
+
+  # ---- return_results = FALSE ----------------------------------------------
+  if (!return_results) {
+    output_paths <- .serialize_group_results(results, output_dir, type = "nmf")
+    return(list(output_paths = output_paths))
   }
 
   results

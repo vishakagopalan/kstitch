@@ -2,7 +2,7 @@
 % Please edit documentation in R/compute_nmf.r
 \name{compute_nmf}
 \alias{compute_nmf}
-\title{Run LIGER NMF factorization per group}
+\title{Run NMF on a Seurat object, optionally per cell group}
 \usage{
 compute_nmf(
   obj,
@@ -25,75 +25,81 @@ compute_nmf(
   stability_n_runs = 10L,
   stability_seed = 1L,
   runOnlineINMF_params = list(),
-  verbose = TRUE
+  verbose = TRUE,
+  return_results = TRUE,
+  output_dir = NULL
 )
 }
 \arguments{
 \item{obj}{A Seurat v5 object.}
 
-\item{assay_name}{Name of the assay to use.}
+\item{assay_name}{Character. Name of the assay to use.}
 
-\item{group.by}{Character scalar naming a column in \code{obj@meta.data} to
-stratify by. \code{NULL} (default) pools all cells.}
+\item{group.by}{Character or NULL. Column in \code{obj@meta.data} defining
+groups. When NULL, all cells are treated as a single group returned under
+the key \code{"all"}.}
 
-\item{num_top_genes_per_factor}{Number of top genes to record per factor.
-Default 100.}
+\item{num_top_genes_per_factor}{Integer. Number of top genes to record per
+NMF factor in the \code{Factor_Gene_List} output.}
 
-\item{batch_var}{Optional metadata column for dataset/batch labels passed to
-rliger functions.}
+\item{batch_var}{Character or NULL. Column in \code{obj@meta.data} to use
+as a batch variable for iNMF integration.}
 
-\item{count_matrix_layer}{Layer name for raw counts. Default \code{"counts"}.}
+\item{count_matrix_layer}{Character. Layer in the assay containing raw
+counts (default \code{"counts"}).}
 
-\item{min_cells}{Minimum cells required to run factorization for a group.
-Default 100.}
+\item{min_cells}{Integer. Groups with fewer cells are skipped.}
 
-\item{gene_pct_threshold}{Minimum fraction of cells expressing a gene.
-Default 0.01.}
+\item{gene_pct_threshold}{Numeric in \code{[0, 1]}. Minimum fraction of cells
+expressing a gene for it to be retained.}
 
-\item{use_normalized_factor_scores}{If \code{TRUE} (default), return
-quantile-normalised embeddings and loadings.}
+\item{use_normalized_factor_scores}{Logical. Whether to use quantile-
+normalised factor scores (default TRUE).}
 
-\item{default_num_factors}{Starting k. Default 30.}
+\item{default_num_factors}{Integer. Number of NMF factors when automatic
+selection is not triggered.}
 
-\item{nCores}{Number of cores. Default 8.}
+\item{nCores}{Integer. Number of cores passed to rliger.}
 
-\item{normalize_params}{Extra arguments for \code{rliger::normalize()}.}
+\item{normalize_params, selectGenes_params, scaleNotCenter_params, runCINMF_params, quantileNorm_params, runOnlineINMF_params}{Named lists of additional arguments forwarded to the corresponding rliger
+functions.}
 
-\item{selectGenes_params}{Extra arguments for \code{rliger::selectGenes()}.}
+\item{integration_method}{Character. One of \code{"consensus"} (default) or
+\code{"online"}.}
 
-\item{scaleNotCenter_params}{Extra arguments for \code{rliger::scaleNotCenter()}.}
+\item{stability_n_runs}{Integer. Number of NMF runs for Kotliar stability
+scoring.}
 
-\item{runCINMF_params}{Extra arguments for \code{rliger::runCINMF()}.}
+\item{stability_seed}{Integer. RNG seed for stability runs.}
 
-\item{quantileNorm_params}{Extra arguments for \code{rliger::quantileNorm()}.}
+\item{verbose}{Logical. Whether to emit progress messages (default TRUE).}
 
-\item{integration_method}{\code{"consensus"} (default) or \code{"online"}.}
+\item{return_results}{Logical. When TRUE (default) results are loaded into
+memory and returned as a named list. When FALSE, each group's result is
+serialized to \code{<output_dir>/<group>.rds} and a named list of file
+paths is returned instead.}
 
-\item{stability_n_runs}{Number of repeated online fits for stability scoring.
-Default 10.}
-
-\item{stability_seed}{Starting seed for stability runs. Default 1.}
-
-\item{runOnlineINMF_params}{Extra arguments for \code{rliger::runOnlineINMF()}.}
-
-\item{verbose}{Logical. Print group progress. Default \code{TRUE}.}
+\item{output_dir}{Character or NULL. Directory for serialized output when
+\code{return_results = FALSE}. When NULL a temporary directory is created
+automatically and is \emph{not} cleaned up on exit (so the files remain
+accessible). Ignored when \code{return_results = TRUE}.}
 }
 \value{
-A named list, one entry per group (or \code{"all"} when
-\code{group.by = NULL}), each containing:
-\describe{
-\item{Factor_Gene_List}{Named list of top genes per factor.}
-\item{NMF_Matrix}{Cell x factor loading matrix.}
-\item{NMF_Loading}{Gene x factor loading matrix.}
-\item{Fit_Error}{Reconstruction error for the final fit.}
-\item{Fit_Summary}{One-row data frame: Method, k, Stability_Score,
-Entropy, Reconstruction_Error, N_Stability_Runs.}
-}
+When \code{return_results = TRUE}: a named list of per-group fit
+lists. Each entry carries \code{group} (character) and
+\code{is_groupwise} (logical) fields in addition to the NMF outputs from
+\code{.run_nmf_one_group()}. Single-group results are returned under the
+key \code{"all"}.
+
+When \code{return_results = FALSE}: a list with element
+\code{output_paths}, a named character vector mapping group names to RDS
+file paths.
 }
 \description{
-Preprocesses a Seurat object, runs online iNMF or consensus iNMF via
-\pkg{rliger}, and returns factor loadings, cell embeddings, top genes per
-factor, and a fit-summary table (including a Kotliar-style stability score).
-When \code{group.by} is supplied, factorization runs independently for each
-unique value of that metadata column.
+Wraps \code{rliger} consensus or online iNMF with Kotliar stability scoring.
+Results are returned as a named list of per-group fit objects, or serialized
+to disk when \code{return_results = FALSE}.
+}
+\seealso{
+\code{\link{store_nmf_results}}, \code{\link{load_kstitch_results}}
 }

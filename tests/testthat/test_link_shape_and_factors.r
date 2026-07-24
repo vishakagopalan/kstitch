@@ -88,3 +88,55 @@ test_that("groups below min_cells are skipped", {
   )
   expect_equal(length(res), 0)
 })
+
+test_that("link_shape_and_factors attaches group and is_groupwise — single group", {
+  set.seed(1)
+  n <- 200
+  shape_mat <- matrix(rnorm(n * 5), n, 5, dimnames = list(paste0("cell_", 1:n), paste0("ShapePC", 1:5)))
+  nmf_mat   <- matrix(rnorm(n * 4), n, 4, dimnames = list(paste0("cell_", 1:n), paste0("Factor",  1:4)))
+  obj <- make_seurat_stub(paste0("cell_", 1:n))
+
+  res <- link_shape_and_factors(obj, nmf_mat, shape_mat)
+
+  expect_equal(res$all$group, "all")
+  expect_false(res$all$is_groupwise)
+})
+
+test_that("link_shape_and_factors attaches group and is_groupwise — grouped", {
+  set.seed(2)
+  n <- 300
+  shape_mat <- matrix(rnorm(n * 5), n, 5, dimnames = list(paste0("cell_", 1:n), paste0("ShapePC", 1:5)))
+  nmf_mat   <- matrix(rnorm(n * 4), n, 4, dimnames = list(paste0("cell_", 1:n), paste0("Factor",  1:4)))
+  obj <- make_seurat_stub(paste0("cell_", 1:n),
+                          meta_cols = list(celltype = rep(c("TypeA", "TypeB"), each = n / 2)))
+
+  res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = "celltype")
+
+  expect_equal(res$TypeA$group, "TypeA")
+  expect_equal(res$TypeB$group, "TypeB")
+  expect_true(res$TypeA$is_groupwise)
+  expect_true(res$TypeB$is_groupwise)
+})
+
+test_that("link_shape_and_factors return_results = FALSE writes RDS files and returns paths", {
+  set.seed(3)
+  n <- 300
+  shape_mat <- matrix(rnorm(n * 5), n, 5, dimnames = list(paste0("cell_", 1:n), paste0("ShapePC", 1:5)))
+  nmf_mat   <- matrix(rnorm(n * 4), n, 4, dimnames = list(paste0("cell_", 1:n), paste0("Factor",  1:4)))
+  obj <- make_seurat_stub(paste0("cell_", 1:n),
+                          meta_cols = list(celltype = rep(c("TypeA", "TypeB"), each = n / 2)))
+  out_dir <- file.path(tempdir(), paste0("test_cca_", kstitch:::.random_id()))
+
+  res <- link_shape_and_factors(obj, nmf_mat, shape_mat, group.by = "celltype",
+                                return_results = FALSE, output_dir = out_dir)
+
+  expect_named(res, "output_paths")
+  expect_named(res$output_paths, c("TypeA", "TypeB"), ignore.order = TRUE)
+  expect_true(all(file.exists(res$output_paths)))
+
+  loaded <- load_kstitch_results(res$output_paths[["TypeA"]], type = "cca")
+  expect_true(is.list(loaded))
+  expect_true("CSP_Scores" %in% names(loaded))
+
+  unlink(out_dir, recursive = TRUE)
+})

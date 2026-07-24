@@ -1,7 +1,7 @@
 make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
   emb <- matrix(rnorm(length(cell_names) * k), length(cell_names), k,
                 dimnames = list(cell_names, paste0("Shape_PC", seq_len(k))))
-  list(
+  list("all"=list(
     TPCA_Embedding = emb,
     Info = list(
       variances           = sort(runif(k, 0.5, 5), decreasing = TRUE),
@@ -10,7 +10,7 @@ make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
       pre_shape_embedding = NULL
     ),
     contour_type = contour_type,
-    output_dir   = tempdir()
+    output_dir   = tempdir())
   )
 }
 

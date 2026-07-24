@@ -143,7 +143,7 @@ test_that("plot_csp_boundary_montage returns ggplot with coord_data attribute", 
         grp, tpca_res,
         cc_idx = 1L, num_bins = 5L,
         num_cells_for_boundary = 3L,
-        area_rescale = FALSE
+        norm_rescale = FALSE
       )
     }
   )
@@ -179,7 +179,7 @@ test_that("plot_csp_boundary_montage messages and uses reconstruction when pre_s
           grp, tpca_res,
           cc_idx = 1L, num_bins = 5L,
           num_cells_for_boundary = 3L,
-          area_rescale = FALSE
+          norm_rescale = FALSE
         ),
         "reconstructed"
       )
