@@ -71,9 +71,11 @@ library(ggplot2)
 Load the pre-computed vignette object:
 
 ```{r load-obj}
-obj <- readRDS(system.file("extdata", "kstitch_vignette_xenium.rds",
-                           package = "kstitch"))
-obj
+vignette_data         <- readRDS(system.file("extdata", "kstitch_vignette_xenium.rds",
+                                             package = "kstitch"))
+obj                   <- vignette_data$obj
+tpca_cell_metadata    <- vignette_data$metadata$tpca_cell
+tpca_nucleus_metadata <- vignette_data$metadata$tpca_nucleus
 ```
 
 The object contains 3,171 keratinocytes. Of these, 2,331 have TPCA shape PCs
@@ -82,10 +84,7 @@ computed for both cell and nucleus boundaries. The remaining 840 cells have
 run (e.g. cells with degenerate or missing boundary polygons).
 
 ```{r check-reductions}
-# Available reductions
 names(obj@reductions)
-
-# How many cells have TPCA embeddings
 sum(!is.na(Seurat::Embeddings(obj, "tpca_nucleus")[, 1]))
 ```
 
@@ -99,10 +98,11 @@ the most direct way to understand what each shape PC captures biologically.
 
 ```{r shape-modes, fig.height = 6}
 tpca_nucleus_info <- list(
+  Metadata       = tpca_nucleus_metadata,
   TPCA_Embedding = Seurat::Embeddings(obj, "tpca_nucleus"),
-  Info          = get_tpca_results(obj, "nucleus"),
-  contour_type  = "nucleus",
-  output_dir    = NA_character_
+  Info           = get_tpca_results(obj, "nucleus"),
+  contour_type   = "nucleus",
+  output_dir     = NA_character_
 )
 
 plot_shape_modes(
@@ -120,91 +120,183 @@ and tends to dominate the first component). PC2 and beyond capture
 
 ---
 
-## Step 2 — Inspect canonical correlations
+## Step 2 — Covariate regression
 
-Retrieve the CCA results for the nucleus contour analysis:
+### Why regress covariates?
 
-```{r get-cca}
-nuc_cca <- obj@misc$kstitch$nucleus_cca
+CCA maximises correlation between the shape and expression sides. Without
+adjustment, technical covariates — sequencing depth (`nCount_Xenium`) and
+segmentation method — can dominate the canonical axes, obscuring biologically
+meaningful morpho-molecular relationships. For example, cells with higher
+sequencing depth may appear to have different NMF factor scores simply because
+more transcripts were captured, not because their gene expression programme
+differs.
 
-# Canonical correlations across components
-barplot(nuc_cca$CC_Corr_Coefs,
-        names.arg = paste0("CC", seq_along(nuc_cca$CC_Corr_Coefs)),
-        ylab = "Canonical correlation",
-        main = "Nucleus CCA — canonical correlations",
-        col  = "steelblue")
+We address this by regressing technical covariates from both the shape and
+expression matrices before running CCA, using `lme4::lmer`. The regression
+models differ between the two sides:
+
+- **Shape matrix** (`shape_pcs + segmentation_method`): regress
+  `scaled_log_depth + (1 | segmentation_method)`. Area is deliberately
+  retained as a predictor column rather than regressed out — nuclear size is
+  biologically meaningful and we want CCA to find axes that may be driven in
+  part by size.
+- **Expression matrix** (NMF factors): regress
+  `scaled_log_area + scaled_log_depth + (1 | segmentation_method)`. Area is
+  removed from the expression side because differences in factor scores
+  attributable purely to cell size are not the signal of interest here.
+
+The vignette presents CCA results **both with and without** covariate
+regression so the reader can assess which canonical axes survive adjustment.
+
+### Shape and expression matrices
+
+In both the regressed and unregressed analyses, the shape matrix is constructed
+by concatenating the top 10 nucleus shape PCs with scaled log nuclear area as
+an additional column. This lets CCA find axes that may be partly driven by
+size, while also capturing shape variation independent of size. The expression
+matrix is the full NMF factor score matrix.
+
+```{r retrieve-cca-results}
+# Unregressed CCA results
+nuc_cca_unreg  <- get_kstitch_results(obj, "nuc_cca_unregressed")
+cell_cca_unreg <- get_kstitch_results(obj, "cell_cca_unregressed")
+
+# Regressed CCA results
+nuc_cca_reg    <- get_kstitch_results(obj, "nuc_cca_regressed")
+cell_cca_reg   <- get_kstitch_results(obj, "cell_cca_regressed")
 ```
-
-The first few canonical correlations are typically the most interpretable.
-A value above ~0.3–0.4 generally indicates a biologically meaningful
-morpho-molecular axis.
 
 ---
 
-## Step 3 — CSP loadings
+## Step 3 — Canonical correlations
+
+Comparing canonical correlations before and after regression reveals how much
+of the morpho-molecular signal is attributable to technical covariates versus
+biology.
+
+```{r cc-barplot, fig.height = 4}
+k <- min(length(nuc_cca_unreg$CC_Corr_Coefs),
+         length(nuc_cca_reg$CC_Corr_Coefs))
+
+cc_df <- data.frame(
+  Component  = rep(paste0("CC", seq_len(k)), 2),
+  Correlation = c(nuc_cca_unreg$CC_Corr_Coefs[seq_len(k)],
+                  nuc_cca_reg$CC_Corr_Coefs[seq_len(k)]),
+  Analysis   = rep(c("Unregressed", "Regressed"), each = k)
+)
+
+ggplot(cc_df, aes(x = Component, y = Correlation, fill = Analysis)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Unregressed" = "steelblue",
+                               "Regressed"   = "tomato")) +
+  labs(title = "Nucleus CCA — canonical correlations",
+       y     = "Canonical correlation") +
+  theme_classic()
+```
+
+A value above ~0.3–0.4 generally indicates a biologically meaningful
+morpho-molecular axis. Canonical correlations that drop substantially after
+regression are likely driven by technical covariates; those that persist
+reflect genuine morpho-molecular coupling.
+
+---
+
+## Step 4 — CSP loadings
 
 The CSP loading plot shows which shape features load most strongly on each
 canonical shape variate. By convention (enforced by `anchor_cca_signs()`),
 the sign of each component is set so that the shape feature with the highest
-absolute structure correlation loads **positively**. The anchor feature is
-shown in the subtitle.
+absolute structure correlation loads positively. The anchor feature is shown
+in the subtitle.
 
-```{r csp-loadings}
-plot_csp_loadings(nuc_cca, cc_idx = 1)
+### Unregressed
+
+```{r csp-loadings-unreg-1}
+plot_csp_loadings(nuc_cca_unreg, cc_idx = 1)
 ```
 
-```{r csp-loadings-2}
-plot_csp_loadings(nuc_cca, cc_idx = 2)
+```{r csp-loadings-unreg-2}
+plot_csp_loadings(nuc_cca_unreg, cc_idx = 2)
 ```
 
-CSP1 is typically dominated by nuclear area (large positive loading on
-`scaled_log_area`). CSP2 and beyond capture shape variation independent of
-size — look for loadings on Shape PC2, PC3, etc.
+### Regressed
+
+```{r csp-loadings-reg-1}
+plot_csp_loadings(nuc_cca_reg, cc_idx = 1)
+```
+
+```{r csp-loadings-reg-2}
+plot_csp_loadings(nuc_cca_reg, cc_idx = 2)
+```
+
+CSP1 in the unregressed analysis is typically dominated by `scaled_log_area`.
+After regression, this size signal is attenuated and shape PCs contribute more
+to CSP1, revealing morphological structure that was previously masked.
 
 ---
 
-## Step 4 — CEP loadings
+## Step 5 — CEP loadings
 
 The CEP loading plot shows which NMF factors are most associated with each
 morphological axis. Factors with large positive loadings on CEP1 are
-up-regulated in cells with large CSP1 scores (i.e. cells with the morphology
-that CSP1 represents).
+up-regulated in cells with large CSP1 scores.
 
-```{r cep-loadings}
-plot_cep_loadings(nuc_cca, cc_idx = 1)
+### Unregressed
+
+```{r cep-loadings-unreg-1}
+plot_cep_loadings(nuc_cca_unreg, cc_idx = 1)
 ```
 
-```{r cep-loadings-2}
-plot_cep_loadings(nuc_cca, cc_idx = 2)
+```{r cep-loadings-unreg-2}
+plot_cep_loadings(nuc_cca_unreg, cc_idx = 2)
+```
+
+### Regressed
+
+```{r cep-loadings-reg-1}
+plot_cep_loadings(nuc_cca_reg, cc_idx = 1)
+```
+
+```{r cep-loadings-reg-2}
+plot_cep_loadings(nuc_cca_reg, cc_idx = 2)
 ```
 
 To interpret which genes drive each NMF factor, inspect
-`obj@misc$kstitch$nmf$NMF_Loading` — each column is a factor, each row
+`obj@misc$kstitch$nmf$all$NMF_Loading` — each column is a factor, each row
 is a gene.
 
 ---
 
-## Step 5 — CSP-binned boundary montage
+## Step 6 — CSP-binned boundary montage
 
 The boundary montage is the headline figure of kstitch. Cells are binned by
 their CSP score into deciles. Within each bin, the cells closest to the bin
 centre (medoids, measured by pairwise PGA distance) are selected and their
 contours are Procrustes-aligned to the Fréchet mean and displayed.
 
-By default (`norm_rescale = TRUE`), contours are rescaled by the contour's Frobenius norm prior to scale normalization so that the displayed size reflects true nuclear area — the size gradient you see across bins is real.
+By default (`norm_rescale = TRUE`), contours are rescaled by the contour's
+Frobenius norm so that the displayed size reflects true nuclear area — the
+size gradient you see across bins is real.
 
-Note: norm_rescale = TRUE is requested here, but this vignette's
-tpca_nucleus_info sets output_dir = NA_character_ (no Shape_Metadata.csv.gz
-is shipped with the vignette object). plot_csp_boundary_montage() checks
-file.exists(file.path(output_dir, "Shape_Metadata.csv.gz")) before
-rescaling, so area_rescale silently falls back to FALSE here -- contours
-below are NOT area-rescaled despite the argument. On your own data, with a
-real output_dir containing Shape_Metadata.csv.gz, area_rescale = TRUE will
-work as documented.
+### Unregressed
 
-```{r montage, fig.height = 3.5}
+```{r montage-unreg, fig.height = 3.5}
 plot_csp_boundary_montage(
-  group_result           = nuc_cca,
+  group_result           = nuc_cca_unreg,
+  tpca_result            = tpca_nucleus_info,
+  cc_idx                 = 1L,
+  num_bins               = 10L,
+  num_cells_for_boundary = 5L,
+  norm_rescale           = TRUE
+)
+```
+
+### Regressed
+
+```{r montage-reg, fig.height = 3.5}
+plot_csp_boundary_montage(
+  group_result           = nuc_cca_reg,
   tpca_result            = tpca_nucleus_info,
   cc_idx                 = 1L,
   num_bins               = 10L,
@@ -220,20 +312,22 @@ plot_csp_boundary_montage(
 
 ---
 
-## Step 6 — Repeat for cell contours
+## Step 7 — Repeat for cell contours
 
 Everything above can be repeated for cell (rather than nucleus) contours by
-substituting `cell_cca` and `tpca_cell`:
+substituting `cell_cca_unregressed` and `cell_cca_regressed`:
 
-```{r cell-cca, eval = TRUE}
-cell_cca <- obj@misc$kstitch$cell_cca
-
-plot_csp_loadings(cell_cca, cc_idx = 1)
-plot_cep_loadings(cell_cca, cc_idx = 1)
+```{r cell-cca}
+plot_csp_loadings(cell_cca_unreg, cc_idx = 1)
+plot_csp_loadings(cell_cca_reg,   cc_idx = 1)
+plot_cep_loadings(cell_cca_unreg, cc_idx = 1)
+plot_cep_loadings(cell_cca_reg,   cc_idx = 1)
 ```
 
 Comparing nucleus and cell CCA results reveals which morpho-molecular axes are
-driven by nuclear shape specifically versus whole-cell shape.
+driven by nuclear shape specifically versus whole-cell shape. Comparing
+regressed and unregressed results reveals which axes reflect biology versus
+technical variation.
 
 ---
 
@@ -242,122 +336,100 @@ driven by nuclear shape specifically versus whole-cell shape.
 The vignette above skips the TPCA and NMF computation steps to keep it
 self-contained. For a full analysis on your own Xenium or CosMx data:
 
-```r
-# 1. Export boundary parquet (done externally — see data-raw/prepare_vignette_data.R)
+```{r full-pipeline, eval = FALSE}
+# seg_list is the list returned by ReadXenium() or ReadNanostring(), e.g.:
+# seg_list <- ReadXenium("path/to/xenium/output", type = c("cell", "nucleus"))
 
-# 2. Run TPCA
-tpca_result <- run_tpca(
-  boundary_parquet_path = "nucleus_boundaries.parquet",
-  output_dir            = "output/tpca_nucleus",
-  contour_type          = "nucleus"
+# 1. Run TPCA (starting from a Seurat object with segmentation list)
+tpca_result <- export_seurat_contours(
+  obj          = obj,
+  seg_list     = seg_list,
+  contour_type = "nucleus",
+  output_dir   = "output/tpca_nucleus"
 )
 obj <- store_tpca_results(obj, tpca_result)
 
-# 3. Run NMF
+# 2. Run NMF
 nmf_results <- compute_nmf(
   obj        = obj,
   assay_name = "Xenium",
   group.by   = "cell_type"
 )
-## Running the full pipeline on your own data
-
-The vignette above skips the TPCA and NMF computation steps to keep it
-self-contained. For a full analysis on your own Xenium or CosMx data:
-
-```r
-# 1. Export boundary parquet (done externally — see data-raw/prepare_vignette_data.R)
-
-# 2. Run TPCA
-tpca_result <- run_tpca(
-  boundary_parquet_path = "nucleus_boundaries.parquet",
-  output_dir            = "output/tpca_nucleus",
-  contour_type          = "nucleus"
-)
-obj <- store_tpca_results(obj, tpca_result)
-
-# 3. Run NMF
-nmf_results <- compute_nmf(
-  obj        = obj,
-  assay_name = "Xenium",
-  group.by   = "cell_type"
-)
+obj <- store_nmf_results(obj, nmf_results)
 ```
 
-### Concatenating covariates onto the shape matrix
+### Covariate regression
 
-In the manuscript accompanying this package, CCA is run between gene
-expression and a shape matrix that has cell (or nucleus) **area concatenated
-on as an extra column**, rather than treating area as a nuisance covariate to
-regress out. This lets CCA find canonical axes that may be driven in part by
-size, which is often biologically meaningful (e.g. larger nuclei tend to
-correlate with specific transcriptional states).
+Before running CCA, we recommend regressing technical covariates from both the
+shape and expression matrices. The shape matrix is constructed by concatenating
+the top shape PCs with scaled log area; the expression matrix is the NMF factor
+score matrix. Both are then adjusted for sequencing depth and segmentation
+method using `lme4::lmer`:
 
-Area is typically already present in `obj@meta.data` for Xenium and CosMx
-objects (check `colnames(obj@meta.data)` for the exact column name in your
-object — it may be `cell_area`, `nucleus_area`, or similar depending on how
-the object was loaded).
+```{r covariate-regression, eval = FALSE}
+library(lme4)
 
-The important part is **alignment**: `area_vec` must be in the exact same
-cell order as the shape matrix before you `cbind()` them together, or the
-area values will silently get attached to the wrong cells. The safe pattern
-is to always index the covariate *by the shape matrix's own row names*:
-
-```r
 shape_pcs <- Seurat::Embeddings(obj, "tpca_nucleus")[, 1:10]
+expr_mat  <- Seurat::Embeddings(obj, "nmf_all")
+meta      <- obj@meta.data
 
-# Pull area from meta.data, explicitly aligned to shape_pcs's cell order.
-# Indexing by rownames(shape_pcs) first guarantees the result is already in
-# the right order; re-attaching the same names makes that explicit.
-area_vec <- setNames(
-  obj@meta.data[rownames(shape_pcs), "cell_area"],
-  rownames(shape_pcs)
-)
+# Build covariate vectors, aligned to shape matrix row order
+area_vec  <- setNames(log(meta[rownames(shape_pcs), "nucleus_area"]),
+                      rownames(shape_pcs))
+depth_vec <- setNames(log(meta[rownames(shape_pcs), "nCount_Xenium"]),
+                      rownames(shape_pcs))
+seg_vec   <- setNames(meta[rownames(shape_pcs), "segmentation_method"],
+                      rownames(shape_pcs))
 
-# Concatenate as an extra column -- safe now that both share the same row
-# order by construction. Log-transforming area is common practice since
-# cell/nucleus area is typically right-skewed.
-shape_mat <- cbind(
-  shape_pcs,
-  scaled_log_area = scale(log(area_vec))[, 1]
-)
+scaled_log_area  <- scale(area_vec)[, 1]
+scaled_log_depth <- scale(depth_vec)[, 1]
+
+# Concatenate scaled log area onto shape PCs
+shape_mat <- cbind(shape_pcs, scaled_log_area = scaled_log_area)
+
+# Regression helper: fits lmer per column, returns residuals
+regress_lmer <- function(mat, log_area, log_depth, seg_method) {
+  cell_ids  <- rownames(mat)
+  resid_mat <- matrix(NA_real_, nrow = nrow(mat), ncol = ncol(mat),
+                      dimnames = dimnames(mat))
+  for (j in seq_len(ncol(mat))) {
+    df  <- data.frame(y = mat[, j],
+                      log_area  = log_area[cell_ids],
+                      log_depth = log_depth[cell_ids],
+                      seg       = seg_method[cell_ids])
+    ok  <- complete.cases(df)
+    fit <- lmer(y ~ log_area + log_depth + (1 | seg), data = df[ok, ],
+                REML = FALSE)
+    resid_mat[ok, j] <- residuals(fit)
+  }
+  resid_mat
+}
+
+shape_mat_reg <- regress_lmer(shape_mat, scaled_log_area, scaled_log_depth, seg_vec)
+expr_mat_reg  <- regress_lmer(expr_mat,  scaled_log_area, scaled_log_depth, seg_vec)
 ```
 
-The same pattern applies to concatenating covariates onto the **expression**
-side (`expr_mat`) rather than the shape side — for example, sequencing depth
-(`nCount_RNA`, already present in every Seurat object's `@meta.data` by
-default):
+### Running CCA with and without regression
 
-```r
-expr_mat <- nmf_results$YourCellType$NMF_Matrix
-
-depth_vec <- setNames(
-  obj@meta.data[rownames(expr_mat), "nCount_RNA"],
-  rownames(expr_mat)
-)
-
-expr_mat <- cbind(expr_mat, scaled_log_depth = scale(log(depth_vec))[, 1])
-```
-
-> **CosMx note:** for CosMx data, a natural additional covariate is each
-> cell's distance to the nearest field-of-view (FOV) edge, since
-> segmentation quality tends to degrade near FOV boundaries. Computing this
-> distance requires FOV polygon/tile boundary information, which is not
-> always a direct `meta.data` column — see your loading tool's
-> documentation (e.g. Seurat's `LoadNanostring()`/`ReadNanostring()`, or the
-> `spacetrooper` package) for how FOV geometry is exposed for your object.
-> This will be covered in a future revision of this vignette.
-
-### Running CCA with the concatenated matrix
-
-```r
-cca_results <- link_shape_and_factors(
+```{r run-cca, eval = FALSE}
+# Unregressed
+cca_unreg <- link_shape_and_factors(
   obj       = obj,
-  expr_mat  = expr_mat,
   shape_mat = shape_mat,
-  group.by  = "cell_type"
+  expr_mat  = expr_mat,
+  group.by  = NULL
 )
-obj <- store_kstitch_results(obj, cca_results)
+obj@misc$kstitch$all$nucleus_cca_unregressed <- anchor_cca_signs(cca_unreg$all)
+
+# Regressed
+cca_reg <- link_shape_and_factors(
+  obj       = obj,
+  shape_mat = shape_mat_reg,
+  expr_mat  = expr_mat_reg,
+  group.by  = NULL
+)
+obj@misc$kstitch$all$nucleus_cca_regressed <- anchor_cca_signs(cca_reg$all)
 ```
 
-See `?run_tpca`, `?compute_nmf`, and `?link_shape_and_factors` for full
-argument documentation.
+See `?export_seurat_contours`, `?compute_nmf`, and `?link_shape_and_factors`
+for full argument documentation.

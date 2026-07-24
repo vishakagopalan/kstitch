@@ -180,7 +180,9 @@ load_kstitch_results <- function(path, type = c("tpca", "nmf", "cca"),
                                  load_pre_shape = TRUE) {
   type <- match.arg(type)
   if (type == "tpca") {
-    .load_kendall_tpca_output(path, load_pre_shape = load_pre_shape)
+    result <- .load_kendall_tpca_output(path, load_pre_shape = load_pre_shape)
+    return(list(all = result))
+
   } else {
     if (!file.exists(path))
       stop(sprintf("File not found: '%s'", path))

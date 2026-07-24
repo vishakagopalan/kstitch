@@ -59,12 +59,8 @@ store_kstitch_results <- function(obj,
 
   if (is.null(obj@misc$kstitch)) obj@misc$kstitch <- list()
 
-  score_fields <- c("CSP_Scores", "CEP_Scores")
-
   for (grp in names(results)) {
-    obj@misc$kstitch[[grp]] <- results[[grp]][
-      setdiff(names(results[[grp]]), score_fields)
-    ]
+    obj@misc$kstitch[[grp]] <- results[[grp]]
   }
 
   obj

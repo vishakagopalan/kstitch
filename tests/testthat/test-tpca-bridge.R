@@ -91,3 +91,17 @@ test_that("get_tpca_results errors informatively on missing results", {
   expect_error(get_tpca_results(obj, "nucleus"),
                "contour_type 'nucleus' not found")
 })
+
+test_that("load_kstitch_results type=tpca returns result under 'all'", {
+
+  result <- load_kstitch_results(
+    path = system.file(
+      "extdata", "xenium_test", "tpca_fixtures", "Unit_Test_Keratinocytes_Nuclei",
+      package = "kstitch"
+    ),  # use existing fixture in inst/extdata/xenium_test/tpca_fixtures/
+    type = "tpca"
+  )
+  expect_named(result, "all")
+  expect_named(result$all, c("TPCA_Embedding", "Info", "Metadata",
+                             "contour_type", "group", "is_groupwise"))
+})

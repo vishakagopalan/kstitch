@@ -228,6 +228,8 @@ plot_csp_boundary_montage <- function(group_result,
   mean_shape <- t(info$frechet_mean)   # 2 x L
   emb        <- group_result$CSP_Scores
   shape_emb  <- tpca_result$TPCA_Embedding
+  valid_idx  <- which(complete.cases(shape_emb))
+  shape_emb  <- shape_emb[valid_idx, , drop = FALSE]
 
   pre_shape          <- info$pre_shape_embedding   # cells x 2 x L, or NULL
   use_reconstruction <- is.null(pre_shape)
