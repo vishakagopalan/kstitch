@@ -126,6 +126,26 @@ link_shape_and_factors <- function(obj,
     X <- shape_mat[cells, , drop = FALSE]
     Y <- expr_mat[cells,  , drop = FALSE]
 
+    # Drop rows where either matrix has any NA
+    complete_idx <- complete.cases(X) & complete.cases(Y)
+    n_dropped    <- sum(!complete_idx)
+    if (n_dropped > 0L)
+      message(sprintf(
+        "  Group '%s': dropping %d cells with NA in shape_mat or expr_mat (%d remain).",
+        grp, n_dropped, sum(complete_idx)
+      ))
+      X <- X[complete_idx, , drop = FALSE]
+      Y <- Y[complete_idx, , drop = FALSE]
+
+      if (nrow(X) < min_cells) {
+        message(sprintf(
+          "Skipping group '%s': only %d complete cells remain after NA removal, minimum is %d.",
+          grp, nrow(X), min_cells
+        ))
+        next
+      }
+
+    cells <- rownames(X)  # update cells to complete set for score rowname assignment
     if (scale) {
       X <- scale(X)
       Y <- scale(Y)
