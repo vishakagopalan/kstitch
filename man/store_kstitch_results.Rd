@@ -7,6 +7,7 @@
 store_kstitch_results(
   obj,
   results,
+  reduction_name = "kstitch",
   reduction_key_csp = "CSP_",
   reduction_key_cep = "CEP_"
 )
@@ -16,6 +17,12 @@ store_kstitch_results(
 
 \item{results}{Named list as returned by \code{\link{link_shape_and_factors}}.}
 
+\item{reduction_name}{Character. Base name used to construct the
+\code{DimReduc} slot names (\code{<reduction_name>_csp} and
+\code{<reduction_name>_cep}) and the \code{obj@misc$kstitch} key.
+Must be unique across calls if storing multiple CCA results.
+Default \code{"kstitch"}.}
+
 \item{reduction_key_csp}{Character. Key prefix for the CSP \code{DimReduc}.
 Default \code{"CSP_"}.}
 
@@ -23,17 +30,19 @@ Default \code{"CSP_"}.}
 Default \code{"CEP_"}.}
 }
 \value{
-The Seurat object with \code{obj[["csp"]]}, \code{obj[["cep"]]}, and
-\code{obj@misc$kstitch} populated.
+The Seurat object with \code{obj[["<reduction_name>_csp"]]},
+\code{obj[["<reduction_name>_cep"]]}, and
+\code{obj@misc$kstitch[[reduction_name]]} populated.
 }
 \description{
 Takes the named list returned by \code{\link{link_shape_and_factors}} and
 writes results into the Seurat object in two places:
 \enumerate{
 \item CSP and CEP scores are assembled across groups into object-spanning
-\code{DimReduc} slots (\code{obj[["csp"]]} and \code{obj[["cep"]]}).
+\code{DimReduc} slots named \code{<reduction_name>_csp} and
+\code{<reduction_name>_cep}.
 \item All other per-group fit information is written to
-\code{obj@misc$kstitch[[group_level]]}.
+\code{obj@misc$kstitch[[reduction_name]][[group_level]]}.
 }
 }
 \seealso{

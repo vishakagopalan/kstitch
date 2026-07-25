@@ -176,13 +176,13 @@ of the morpho-molecular signal is attributable to technical covariates versus
 biology.
 
 ```{r cc-barplot, fig.height = 4}
-k <- min(length(nuc_cca_unreg$CC_Corr_Coefs),
-         length(nuc_cca_reg$CC_Corr_Coefs))
+k <- min(length(nuc_cca_unreg$all$CC_Corr_Coefs),
+         length(nuc_cca_reg$all$CC_Corr_Coefs))
 
 cc_df <- data.frame(
   Component  = rep(paste0("CC", seq_len(k)), 2),
-  Correlation = c(nuc_cca_unreg$CC_Corr_Coefs[seq_len(k)],
-                  nuc_cca_reg$CC_Corr_Coefs[seq_len(k)]),
+  Correlation = c(nuc_cca_unreg$all$CC_Corr_Coefs[seq_len(k)],
+                  nuc_cca_reg$all$CC_Corr_Coefs[seq_len(k)]),
   Analysis   = rep(c("Unregressed", "Regressed"), each = k)
 )
 
@@ -283,7 +283,7 @@ size gradient you see across bins is real.
 
 ```{r montage-unreg, fig.height = 3.5}
 plot_csp_boundary_montage(
-  group_result           = nuc_cca_unreg,
+  group_result           = nuc_cca_unreg$all,
   tpca_result            = tpca_nucleus_info,
   cc_idx                 = 1L,
   num_bins               = 10L,
@@ -296,7 +296,7 @@ plot_csp_boundary_montage(
 
 ```{r montage-reg, fig.height = 3.5}
 plot_csp_boundary_montage(
-  group_result           = nuc_cca_reg,
+  group_result           = nuc_cca_reg$all,
   tpca_result            = tpca_nucleus_info,
   cc_idx                 = 1L,
   num_bins               = 10L,
@@ -317,7 +317,7 @@ plot_csp_boundary_montage(
 Everything above can be repeated for cell (rather than nucleus) contours by
 substituting `cell_cca_unregressed` and `cell_cca_regressed`:
 
-```{r cell-cca}
+```{r cell-cdevca}
 plot_csp_loadings(cell_cca_unreg, cc_idx = 1)
 plot_csp_loadings(cell_cca_reg,   cc_idx = 1)
 plot_cep_loadings(cell_cca_unreg, cc_idx = 1)

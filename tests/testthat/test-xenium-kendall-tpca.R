@@ -6,8 +6,8 @@
     package = "kstitch"
   )
   if (!nzchar(fixture_dir)) return(NULL)
-  result <- kstitch:::.load_kendall_tpca_output(fixture_dir)
-  rownames(result$TPCA_Embedding)
+  result <- load_kstitch_results(fixture_dir, type = "tpca")
+  rownames(result$all$TPCA_Embedding)
 }
 
 .split_cell_ids <- function(cell_ids) {
@@ -51,7 +51,6 @@ test_that("run_tpca load_pre_shape = FALSE sets pre_shape_embedding to NULL", {
   ))
 
   expect_null(result$all$Info$pre_shape_embedding)
-  # Embedding and other Info fields should still be populated
   expect_true(is.matrix(result$all$TPCA_Embedding))
   expect_true(all(c("variances", "v_matrix", "frechet_mean") %in%
                     names(result$all$Info)))
@@ -93,8 +92,8 @@ test_that("load_kstitch_results load_pre_shape = FALSE sets pre_shape_embedding 
   result <- load_kstitch_results(.fixture_dir(), type = "tpca",
                                  load_pre_shape = FALSE)
 
-  expect_null(result$Info$pre_shape_embedding)
-  expect_true(is.matrix(result$TPCA_Embedding))
+  expect_null(result$all$Info$pre_shape_embedding)
+  expect_true(is.matrix(result$all$TPCA_Embedding))
 })
 
 # ---- single-group: temp dir -------------------------------------------------
@@ -158,7 +157,6 @@ test_that("run_tpca return_results = FALSE returns paths and preserves files", {
   expect_true(length(result$output_paths) == 1L)
   expect_true(file.exists(file.path(result$output_paths[[1]], "TPCA_Info.h5")))
   expect_true(file.exists(file.path(result$output_paths[[1]], "Shape_Metadata.csv.gz")))
-  # No embedding loaded into memory
   expect_null(result$TPCA_Embedding)
 })
 
@@ -195,31 +193,10 @@ test_that("load_kstitch_results type='tpca' loads deferred results correctly", {
 
   loaded <- load_kstitch_results(deferred$output_paths[[1]], type = "tpca")
 
-  expect_true(is.matrix(loaded$TPCA_Embedding))
-  expect_true(nrow(loaded$TPCA_Embedding) > 0)
-  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$Info)))
-  expect_s3_class(loaded$Metadata, "data.frame")
-})
-
-# ---- single-group: fixture loader -------------------------------------------
-
-test_that(".load_kendall_tpca_output reads cell boundary TPCA correctly", {
-  skip_on_ci()
-  skip_if(!nzchar(.fixture_dir()), "TPCA fixture not found")
-
-  result <- kstitch:::.load_kendall_tpca_output(.fixture_dir())
-
-  expect_true(is.matrix(result$TPCA_Embedding))
-  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(result$Info)))
-
-  expected <- readRDS(system.file(
-    "extdata", "xenium_test", "Test_TPCA_Info.rds", package = "kstitch"
-  ))
-
-  diff_same_sign <- mean(abs(result$TPCA_Embedding - expected$TPCA_Embedding))
-  diff_flip_sign <- mean(abs(result$TPCA_Embedding + expected$TPCA_Embedding))
-  expect_true(min(diff_same_sign, diff_flip_sign) < 1e-4)
-  expect_equal(result$Info$variances, expected$Info$variances, tolerance = 1e-4)
+  expect_true(is.matrix(loaded$all$TPCA_Embedding))
+  expect_true(nrow(loaded$all$TPCA_Embedding) > 0)
+  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$all$Info)))
+  expect_s3_class(loaded$all$Metadata, "data.frame")
 })
 
 # ---- single-group: known output ---------------------------------------------
@@ -234,7 +211,7 @@ test_that("run_tpca reproduces known output on fixture contours", {
     list(boundary_parquet_path = .boundary_path(), output_dir = tmp_out),
     .std_run_args
   ))
-  expected <- kstitch:::.load_kendall_tpca_output(.fixture_dir())
+  expected <- load_kstitch_results(.fixture_dir(), type = "tpca")$all
 
   expect_setequal(rownames(result$all$TPCA_Embedding), rownames(expected$TPCA_Embedding))
   expect_equal(ncol(result$all$TPCA_Embedding), ncol(expected$TPCA_Embedding))
@@ -272,8 +249,8 @@ test_that("Frechet mean is finite on fixture contours", {
   skip_on_ci()
   skip_if(!nzchar(.fixture_dir()), "expected tpca fixture not found")
 
-  expected <- kstitch:::.load_kendall_tpca_output(.fixture_dir())
-  expect_true(all(is.finite(expected$Info$frechet_mean)))
+  result <- load_kstitch_results(.fixture_dir(), type = "tpca")
+  expect_true(all(is.finite(result$all$Info$frechet_mean)))
 })
 
 # ---- single-group: parallel vs serial ---------------------------------------
@@ -288,20 +265,15 @@ test_that("frechet accepts a warm-start mu and converges faster than cold start"
     path = system.file("python", package = "kstitch")
   )
 
-  pre_shape_path <- file.path(
-    .fixture_dir(), "Pre_Shape_Space_Embedding.h5"
-  )
+  pre_shape_path <- file.path(.fixture_dir(), "Pre_Shape_Space_Embedding.h5")
   skip_if(!file.exists(pre_shape_path), "pre-shape fixture not found")
 
   raw <- rhdf5::h5read(pre_shape_path, "pre_shape_space_embedding")
   X_r <- aperm(raw, c(3L, 2L, 1L))
   X   <- reticulate::r_to_py(X_r)
 
-  # Cold start to get the true Frechet mean
   mu_true <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L)
 
-  # Random valid pre-shape warm start: shape (2, L), zero-centred,
-  # unit Frobenius norm
   L         <- dim(X_r)[3]
   set.seed(42L)
   mu_rand_r <- matrix(rnorm(2L * L), nrow = 2L, ncol = L)
@@ -309,14 +281,12 @@ test_that("frechet accepts a warm-start mu and converges faster than cold start"
   mu_rand_r <- mu_rand_r / norm(mu_rand_r, type = "F")
   mu_rand   <- reticulate::r_to_py(mu_rand_r)
 
-  # Warm start from true mean: should converge in 1 iteration
   mu_warm_hist <- ktpy$frechet(
     X, eta = 1, tol = 1e-4, max_iter = 1000L,
     store_history = TRUE, mu = mu_true
   )
   iters_warm <- length(mu_warm_hist[[2L]])
 
-  # Cold start (default mu = X[0])
   mu_cold_hist <- ktpy$frechet(
     X, eta = 1, tol = 1e-4, max_iter = 1000L,
     store_history = TRUE
@@ -326,7 +296,6 @@ test_that("frechet accepts a warm-start mu and converges faster than cold start"
   expect_true(iters_warm < iters_cold,
               label = "warm start from true mean converges faster than cold start")
 
-  # Random warm start should still produce a finite result
   mu_rand_result <- ktpy$frechet(
     X, eta = 1, tol = 1e-4, max_iter = 1000L, mu = mu_rand
   )
@@ -343,53 +312,45 @@ test_that("run_kendall_tpca accepts a warm-start mu and matches cold start outpu
     path = system.file("python", package = "kstitch")
   )
 
-  pre_shape_path <- file.path(
-    .fixture_dir(), "Pre_Shape_Space_Embedding.h5"
-  )
+  pre_shape_path <- file.path(.fixture_dir(), "Pre_Shape_Space_Embedding.h5")
   skip_if(!file.exists(pre_shape_path), "pre-shape fixture not found")
 
   raw <- rhdf5::h5read(pre_shape_path, "pre_shape_space_embedding")
   X   <- reticulate::r_to_py(aperm(raw, c(3L, 2L, 1L)))
 
-  # Get true Frechet mean via frechet() directly
   mu_true <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L)
 
   out_cold <- withr::local_tempdir()
   out_warm <- withr::local_tempdir()
 
-  # Shape_Metadata.csv.gz lives in pre_shape_input_dir, not output_dir.
-  # Copy it into each output dir so .load_kendall_tpca_output() can find it.
   file.copy(
     file.path(.fixture_dir(), "Shape_Metadata.csv.gz"),
     c(file.path(out_cold, "Shape_Metadata.csv.gz"),
       file.path(out_warm, "Shape_Metadata.csv.gz"))
   )
 
-  # Cold start via run_kendall_tpca
   ktpy$run_kendall_tpca(
-    pre_shape_input_dir = .fixture_dir(),
-    output_dir          = out_cold,
-    eta                 = 1,
-    frechet_mean_tol    = 1e-4,
+    pre_shape_input_dir   = .fixture_dir(),
+    output_dir            = out_cold,
+    eta                   = 1,
+    frechet_mean_tol      = 1e-4,
     max_frechet_mean_iter = 1000L
   )
 
-  # Warm start from true mean
   ktpy$run_kendall_tpca(
-    pre_shape_input_dir = .fixture_dir(),
-    output_dir          = out_warm,
-    eta                 = 1,
-    frechet_mean_tol    = 1e-4,
+    pre_shape_input_dir   = .fixture_dir(),
+    output_dir            = out_warm,
+    eta                   = 1,
+    frechet_mean_tol      = 1e-4,
     max_frechet_mean_iter = 1000L,
-    mu                  = mu_true
+    mu                    = mu_true
   )
 
-  res_cold <- kstitch:::.load_kendall_tpca_output(out_cold)
-  res_warm <- kstitch:::.load_kendall_tpca_output(out_warm)
+  res_cold <- load_kstitch_results(out_cold, type = "tpca")$all
+  res_warm <- load_kstitch_results(out_warm, type = "tpca")$all
 
-  # Embeddings should agree up to sign per PC
-  common_ids  <- intersect(rownames(res_cold$TPCA_Embedding),
-                           rownames(res_warm$TPCA_Embedding))
+  common_ids <- intersect(rownames(res_cold$TPCA_Embedding),
+                          rownames(res_warm$TPCA_Embedding))
   expect_true(length(common_ids) > 0)
 
   for (j in seq_len(ncol(res_cold$TPCA_Embedding))) {
@@ -624,8 +585,8 @@ test_that("load_kstitch_results loads groupwise deferred results correctly", {
 
   for (grp in c("groupA", "groupB")) {
     loaded <- load_kstitch_results(deferred$output_paths[[grp]], type = "tpca")
-    expect_true(is.matrix(loaded$TPCA_Embedding))
-    expect_true(nrow(loaded$TPCA_Embedding) > 0)
-    expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$Info)))
+    expect_true(is.matrix(loaded$all$TPCA_Embedding))
+    expect_true(nrow(loaded$all$TPCA_Embedding) > 0)
+    expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$all$Info)))
   }
 })
