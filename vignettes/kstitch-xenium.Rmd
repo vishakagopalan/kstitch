@@ -46,9 +46,8 @@ Geodesic Analysis, or PGA) works by:
 2. Projecting all shapes onto the **tangent plane** at that mean via a log-map.
 3. Running standard SVD on the projected (now flat) coordinates.
 
-The result is a set of **shape principal components** (Shape PCs) that
-describe the major axes of morphological variation in a geometrically correct
-way.
+The result is a set of **shape principal components** (Shape PCs) that describe
+the major axes of morphological variation in a geometrically correct way.
 
 ### What does CCA find?
 
@@ -63,48 +62,251 @@ along CSP1 also differ in gene expression along CEP1.
 
 ## Setup
 
-```{r load}
+```{r load-libs}
 library(kstitch)
 library(ggplot2)
 ```
 
-Load the pre-computed vignette object:
+Load the pre-computed vignette object. If you ran the full pipeline chunks
+below, `keratinocyte_obj` will already be in memory and you can skip this chunk.
 
 ```{r load-obj}
 vignette_data         <- readRDS(system.file("extdata", "kstitch_vignette_xenium.rds",
                                              package = "kstitch"))
-obj                   <- vignette_data$obj
-tpca_cell_metadata    <- vignette_data$metadata$tpca_cell
+keratinocyte_obj      <- vignette_data$obj
 tpca_nucleus_metadata <- vignette_data$metadata$tpca_nucleus
+tpca_cell_metadata    <- vignette_data$metadata$tpca_cell
 ```
 
-The object contains 3,171 keratinocytes. Of these, 2,331 have TPCA shape PCs
-computed for both cell and nucleus boundaries. The remaining 840 cells have
-`NA` in the TPCA reductions — these are cells that were excluded from the PGA
-run (e.g. cells with degenerate or missing boundary polygons).
+The object contains 3,171 keratinocytes. 2,331 have nucleus TPCA shape PCs
+computed and 2,831 have cell TPCA shape PCs computed. Cells missing from each
+reduction had degenerate or missing boundary polygons and were excluded from
+the PGA run.
 
 ```{r check-reductions}
-names(obj@reductions)
-sum(!is.na(Seurat::Embeddings(obj, "tpca_nucleus")[, 1]))
+names(keratinocyte_obj@reductions)
+sum(!is.na(Seurat::Embeddings(keratinocyte_obj, "tpca_nucleus")[, 1]))
+sum(!is.na(Seurat::Embeddings(keratinocyte_obj, "tpca_cell")[, 1]))
 ```
 
 ---
 
-## Step 1 — Inspect shape modes
+## Step 1 — Download data and run NMF (eval=FALSE)
 
-The `plot_shape_modes()` function reconstructs and plots cell shapes along each
-principal geodesic component at a range of standard deviation values. This is
-the most direct way to understand what each shape PC captures biologically.
+NMF is run once and its factors feed into both the nuclear and cell shape
+analyses below.
 
-```{r shape-modes, fig.height = 6}
+### Download the data
+
+```{r download-data, eval = FALSE}
+# Download the Xenium Prime Human Skin FFPE dataset from 10x Genomics and
+# unpack it into a local directory. Update xenium_data_path to match.
+xenium_data_path <- "path/to/Xenium_Prime_Human_Skin_FFPE_outs/"
+```
+
+### Load the Xenium object and subset to keratinocytes
+
+```{r subset-keratinocytes, eval = FALSE}
+library(Seurat)
+library(kstitch)
+
+vignette_data <- readRDS(system.file("extdata", "kstitch_vignette_xenium.rds",
+                                     package = "kstitch"))
+precomputed_obj <- vignette_data$obj
+
+keratinocyte_cell_ids     <- Cells(precomputed_obj)
+keratinocyte_genes_to_use <- Features(precomputed_obj)  # genes >= 10 nTPM in
+                                                         # keratinocytes (HPA)
+
+melanoma_xenium_obj <- LoadXenium(xenium_data_path, molecule.coordinates = FALSE)
+keratinocyte_obj <- subset(melanoma_xenium_obj,
+                           cells    = keratinocyte_cell_ids,
+                           features = keratinocyte_genes_to_use)
+# You may receive object-validation warnings; these can be ignored.
+```
+
+### Run NMF
+
+```{r run-nmf, eval = FALSE}
+nmf_output <- compute_nmf(
+  keratinocyte_obj,
+  assay_name               = "Xenium",
+  stability_seed           = 235,
+  default_num_factors      = 10,
+  num_top_genes_per_factor = 50,
+  integration_method       = "online",
+  selectGenes_params       = list(nGenes = "all", verbose = TRUE),
+  gene_pct_threshold       = 0.01
+)
+
+keratinocyte_obj <- store_nmf_results(keratinocyte_obj, nmf_output)
+```
+
+### Load segmentation info
+
+```{r load-seg, eval = FALSE}
+melanoma_xenium_segmentation_info <- ReadXenium(
+  xenium_data_path,
+  outs = c("segmentation_method"),
+  type = c("segmentations", "nucleus_segmentations", "centroids")
+)
+```
+
+### Covariate regression helper
+
+We define `.regress_lmer()` once here for use in both the nuclear and cell
+shape analyses. It operates column-by-column on a matrix: for each column it
+fits a mixed-effects model with `scaled_log_depth` as a fixed effect and
+`segmentation_method` as a random intercept, then returns the model residuals.
+Cells with incomplete covariate data are excluded from model fitting and left
+as `NA` in the output.
+
+```{r define-regress-lmer, eval = FALSE}
+library(lme4)
+
+.regress_lmer <- function(mat, scaled_log_depth, seg_method) {
+  cell_ids  <- rownames(mat)
+  resid_mat <- matrix(NA_real_, nrow = nrow(mat), ncol = ncol(mat),
+                      dimnames = dimnames(mat))
+  for (j in seq_len(ncol(mat))) {
+    df <- data.frame(
+      y                = mat[, j],
+      scaled_log_depth = scaled_log_depth[cell_ids],
+      seg_method       = seg_method[cell_ids],
+      stringsAsFactors = FALSE
+    )
+    ok <- complete.cases(df)
+    if (sum(ok) < 10L) {
+      warning(sprintf("Column %d: fewer than 10 complete cases, skipping.", j))
+      next
+    }
+    fit <- lmer(y ~ scaled_log_depth + (1 | seg_method),
+                data = df[ok, ], REML = FALSE)
+    resid_mat[ok, j] <- residuals(fit)
+  }
+  resid_mat
+}
+
+meta           <- keratinocyte_obj@meta.data
+log_depth_vec  <- setNames(log(meta$nCount_Xenium),  rownames(meta))
+seg_method_vec <- setNames(meta$segmentation_method, rownames(meta))
+nmf_cells      <- rownames(Embeddings(keratinocyte_obj, "nmf_all"))
+```
+
+---
+
+# Nuclear shape analysis
+
+## Step 2 — Export nucleus contours and run TPCA (eval=FALSE)
+
+TPCA is restricted to cells that have exactly one nucleus.
+
+```{r run-tpca-nucleus, eval = FALSE}
+keratinocytes_cells_with_single_nucleus <-
+  rownames(na.omit(Embeddings(precomputed_obj, "tpca_nucleus")))
+
+tpca_nucleus_out <- export_seurat_contours(
+  melanoma_xenium_obj,
+  seg_list     = melanoma_xenium_segmentation_info,
+  output_dir   = "output/tpca_nucleus",
+  contour_type = "nucleus",
+  use_parallel = TRUE,
+  num_threads  = 8,
+  cell_ids     = keratinocytes_cells_with_single_nucleus
+)
+keratinocyte_obj <- store_tpca_results(keratinocyte_obj, tpca_nucleus_out,
+                                       reduction_key_prefix = "NucleusShapePC_")
+```
+
+## Step 3 — Nucleus covariate regression (eval=FALSE)
+
+The shape matrix is the top 10 nucleus shape PCs concatenated with scaled log
+nuclear area. Scaled log area is retained as a predictor column rather than
+regressed out — nuclear size is biologically meaningful and we want CCA to
+find axes that may be partly driven by it. Scaled log sequencing depth and
+segmentation method are regressed from both the shape and expression matrices.
+
+```{r nucleus-regression, eval = FALSE}
+tpca_nuc_cells   <- rownames(Embeddings(keratinocyte_obj, "tpca_nucleus"))
+shared_nuc_cells <- intersect(tpca_nuc_cells, nmf_cells)
+
+nuc_log_area_vec     <- setNames(
+  log(tpca_nucleus_out$all$Metadata$area[
+        match(rownames(meta), tpca_nucleus_out$all$Metadata$cell_id)]),
+  rownames(meta)
+)
+scaled_nuc_log_area  <- setNames(scale(nuc_log_area_vec[shared_nuc_cells])[, 1],
+                                  shared_nuc_cells)
+scaled_log_depth_nuc <- setNames(scale(log_depth_vec[shared_nuc_cells])[, 1],
+                                  shared_nuc_cells)
+
+shape_pcs_nuc       <- Embeddings(keratinocyte_obj, "tpca_nucleus")[shared_nuc_cells, 1:10]
+expr_mat_nuc        <- Embeddings(keratinocyte_obj, "nmf_all")[shared_nuc_cells, ]
+shape_mat_nuc_unreg <- cbind(shape_pcs_nuc,
+                              scaled_log_area = scaled_nuc_log_area[shared_nuc_cells])
+
+shape_mat_nuc_reg <- .regress_lmer(shape_mat_nuc_unreg,
+                                    scaled_log_depth_nuc, seg_method_vec)
+expr_mat_nuc_reg  <- .regress_lmer(expr_mat_nuc,
+                                    scaled_log_depth_nuc, seg_method_vec)
+```
+
+## Step 4 — Nucleus CCA (eval=FALSE)
+
+```{r nucleus-cca, eval = FALSE}
+cca_nuc_unreg <- link_shape_and_factors(
+  obj       = keratinocyte_obj,
+  shape_mat = shape_mat_nuc_unreg,
+  expr_mat  = expr_mat_nuc,
+  group.by  = NULL
+)
+keratinocyte_obj <- store_kstitch_results(keratinocyte_obj, cca_nuc_unreg,
+                                           reduction_name    = "nuc_cca_unregressed",
+                                           reduction_key_csp = "CSPNU_",
+                                           reduction_key_cep = "CEPNU_")
+
+cca_nuc_reg <- link_shape_and_factors(
+  obj       = keratinocyte_obj,
+  shape_mat = shape_mat_nuc_reg,
+  expr_mat  = expr_mat_nuc_reg,
+  group.by  = NULL
+)
+keratinocyte_obj <- store_kstitch_results(keratinocyte_obj, cca_nuc_reg,
+                                           reduction_name    = "nuc_cca_regressed",
+                                           reduction_key_csp = "CSPNR_",
+                                           reduction_key_cep = "CEPNR_")
+```
+
+## Nuclear shape results
+
+Retrieve the nucleus CCA results and build the `tpca_result` object expected
+by the figure functions. If you ran the full pipeline, use
+`tpca_nucleus_out$all$Metadata` in place of `tpca_nucleus_metadata`.
+
+```{r retrieve-nuc-cca}
+nuc_cca_unreg <- get_kstitch_results(keratinocyte_obj, "nuc_cca_unregressed")
+nuc_cca_reg   <- get_kstitch_results(keratinocyte_obj, "nuc_cca_regressed")
+
 tpca_nucleus_info <- list(
   Metadata       = tpca_nucleus_metadata,
-  TPCA_Embedding = Seurat::Embeddings(obj, "tpca_nucleus"),
-  Info           = get_tpca_results(obj, "nucleus"),
+  TPCA_Embedding = Seurat::Embeddings(keratinocyte_obj, "tpca_nucleus"),
+  Info           = get_tpca_results(keratinocyte_obj, "nucleus"),
   contour_type   = "nucleus",
   output_dir     = NA_character_
 )
+```
 
+### Shape modes
+
+`plot_shape_modes()` reconstructs nucleus shapes along each principal geodesic
+component at a range of standard deviation values — the most direct way to
+understand what each shape PC captures biologically. Each row is a shape PC;
+each column is a standard deviation along that component. PC1 is typically
+dominated by **nuclear size** (area variation enters as `scaled_log_area` and
+tends to dominate the first component). PC2 and beyond capture shape variation
+independent of size.
+
+```{r shape-modes-nuc, fig.height = 6}
 plot_shape_modes(
   tpca_nucleus_info,
   sds_to_plot = c(-2, -1, 0, 1, 2),
@@ -112,78 +314,23 @@ plot_shape_modes(
 )
 ```
 
-Reading these plots: each row is a shape PC, each column is a standard
-deviation value along that component. PC1 here is dominated by **nuclear
-size** (as expected — area variation is re-introduced as `scaled_log_area`
-and tends to dominate the first component). PC2 and beyond capture
-**shape** variation independent of size.
+### Canonical correlations
 
----
+Comparing canonical correlations before and after covariate regression reveals
+how much of the morpho-molecular signal is attributable to technical covariates
+versus biology. Correlations that drop substantially after regression are likely
+covariate-driven; those that persist reflect genuine morpho-molecular coupling.
+A value above ~0.3–0.4 generally indicates a biologically meaningful axis.
 
-## Step 2 — Covariate regression
-
-### Why regress covariates?
-
-CCA maximises correlation between the shape and expression sides. Without
-adjustment, technical covariates — sequencing depth (`nCount_Xenium`) and
-segmentation method — can dominate the canonical axes, obscuring biologically
-meaningful morpho-molecular relationships. For example, cells with higher
-sequencing depth may appear to have different NMF factor scores simply because
-more transcripts were captured, not because their gene expression programme
-differs.
-
-We address this by regressing technical covariates from both the shape and
-expression matrices before running CCA, using `lme4::lmer`. The regression
-models differ between the two sides:
-
-- **Shape matrix** (`shape_pcs + segmentation_method`): regress
-  `scaled_log_depth + (1 | segmentation_method)`. Area is deliberately
-  retained as a predictor column rather than regressed out — nuclear size is
-  biologically meaningful and we want CCA to find axes that may be driven in
-  part by size.
-- **Expression matrix** (NMF factors): regress
-  `scaled_log_area + scaled_log_depth + (1 | segmentation_method)`. Area is
-  removed from the expression side because differences in factor scores
-  attributable purely to cell size are not the signal of interest here.
-
-The vignette presents CCA results **both with and without** covariate
-regression so the reader can assess which canonical axes survive adjustment.
-
-### Shape and expression matrices
-
-In both the regressed and unregressed analyses, the shape matrix is constructed
-by concatenating the top 10 nucleus shape PCs with scaled log nuclear area as
-an additional column. This lets CCA find axes that may be partly driven by
-size, while also capturing shape variation independent of size. The expression
-matrix is the full NMF factor score matrix.
-
-```{r retrieve-cca-results}
-# Unregressed CCA results
-nuc_cca_unreg  <- get_kstitch_results(obj, "nuc_cca_unregressed")
-cell_cca_unreg <- get_kstitch_results(obj, "cell_cca_unregressed")
-
-# Regressed CCA results
-nuc_cca_reg    <- get_kstitch_results(obj, "nuc_cca_regressed")
-cell_cca_reg   <- get_kstitch_results(obj, "cell_cca_regressed")
-```
-
----
-
-## Step 3 — Canonical correlations
-
-Comparing canonical correlations before and after regression reveals how much
-of the morpho-molecular signal is attributable to technical covariates versus
-biology.
-
-```{r cc-barplot, fig.height = 4}
+```{r cc-barplot-nuc, fig.height = 4}
 k <- min(length(nuc_cca_unreg$all$CC_Corr_Coefs),
          length(nuc_cca_reg$all$CC_Corr_Coefs))
 
 cc_df <- data.frame(
-  Component  = rep(paste0("CC", seq_len(k)), 2),
+  Component   = rep(paste0("CC", seq_len(k)), 2),
   Correlation = c(nuc_cca_unreg$all$CC_Corr_Coefs[seq_len(k)],
                   nuc_cca_reg$all$CC_Corr_Coefs[seq_len(k)]),
-  Analysis   = rep(c("Unregressed", "Regressed"), each = k)
+  Analysis    = rep(c("Unregressed", "Regressed"), each = k)
 )
 
 ggplot(cc_df, aes(x = Component, y = Correlation, fill = Analysis)) +
@@ -195,93 +342,79 @@ ggplot(cc_df, aes(x = Component, y = Correlation, fill = Analysis)) +
   theme_classic()
 ```
 
-A value above ~0.3–0.4 generally indicates a biologically meaningful
-morpho-molecular axis. Canonical correlations that drop substantially after
-regression are likely driven by technical covariates; those that persist
-reflect genuine morpho-molecular coupling.
-
----
-
-## Step 4 — CSP loadings
+### CSP loadings
 
 The CSP loading plot shows which shape features load most strongly on each
 canonical shape variate. By convention (enforced by `anchor_cca_signs()`),
 the sign of each component is set so that the shape feature with the highest
-absolute structure correlation loads positively. The anchor feature is shown
-in the subtitle.
+absolute structure correlation loads positively. CSP1 in the unregressed
+analysis is typically dominated by `scaled_log_area`. After regression, this
+size signal is attenuated and shape PCs contribute more to CSP1.
 
-### Unregressed
+#### Unregressed
 
-```{r csp-loadings-unreg-1}
-plot_csp_loadings(nuc_cca_unreg, cc_idx = 1)
+```{r csp-loadings-nuc-unreg-1}
+plot_csp_loadings(nuc_cca_unreg$all, cc_idx = 1)
 ```
 
-```{r csp-loadings-unreg-2}
-plot_csp_loadings(nuc_cca_unreg, cc_idx = 2)
+```{r csp-loadings-nuc-unreg-2}
+plot_csp_loadings(nuc_cca_unreg$all, cc_idx = 2)
 ```
 
-### Regressed
+#### Regressed
 
-```{r csp-loadings-reg-1}
-plot_csp_loadings(nuc_cca_reg, cc_idx = 1)
+```{r csp-loadings-nuc-reg-1}
+plot_csp_loadings(nuc_cca_reg$all, cc_idx = 1)
 ```
 
-```{r csp-loadings-reg-2}
-plot_csp_loadings(nuc_cca_reg, cc_idx = 2)
+```{r csp-loadings-nuc-reg-2}
+plot_csp_loadings(nuc_cca_reg$all, cc_idx = 2)
 ```
 
-CSP1 in the unregressed analysis is typically dominated by `scaled_log_area`.
-After regression, this size signal is attenuated and shape PCs contribute more
-to CSP1, revealing morphological structure that was previously masked.
-
----
-
-## Step 5 — CEP loadings
+### CEP loadings
 
 The CEP loading plot shows which NMF factors are most associated with each
 morphological axis. Factors with large positive loadings on CEP1 are
-up-regulated in cells with large CSP1 scores.
+up-regulated in cells with high CSP1 scores. To identify the genes driving
+each NMF factor, inspect `keratinocyte_obj@misc$kstitch$nmf$all$NMF_Loading`.
 
-### Unregressed
+#### Unregressed
 
-```{r cep-loadings-unreg-1}
-plot_cep_loadings(nuc_cca_unreg, cc_idx = 1)
+```{r cep-loadings-nuc-unreg-1}
+plot_cep_loadings(nuc_cca_unreg$all, cc_idx = 1)
 ```
 
-```{r cep-loadings-unreg-2}
-plot_cep_loadings(nuc_cca_unreg, cc_idx = 2)
+```{r cep-loadings-nuc-unreg-2}
+plot_cep_loadings(nuc_cca_unreg$all, cc_idx = 2)
 ```
 
-### Regressed
+#### Regressed
 
-```{r cep-loadings-reg-1}
-plot_cep_loadings(nuc_cca_reg, cc_idx = 1)
+```{r cep-loadings-nuc-reg-1}
+plot_cep_loadings(nuc_cca_reg$all, cc_idx = 1)
 ```
 
-```{r cep-loadings-reg-2}
-plot_cep_loadings(nuc_cca_reg, cc_idx = 2)
+```{r cep-loadings-nuc-reg-2}
+plot_cep_loadings(nuc_cca_reg$all, cc_idx = 2)
 ```
 
-To interpret which genes drive each NMF factor, inspect
-`obj@misc$kstitch$nmf$all$NMF_Loading` — each column is a factor, each row
-is a gene.
-
----
-
-## Step 6 — CSP-binned boundary montage
+### CSP-binned boundary montage
 
 The boundary montage is the headline figure of kstitch. Cells are binned by
-their CSP score into deciles. Within each bin, the cells closest to the bin
-centre (medoids, measured by pairwise PGA distance) are selected and their
-contours are Procrustes-aligned to the Fréchet mean and displayed.
+their CSP score into deciles. Within each bin the cells closest to the bin
+centre (medoids, measured by pairwise PGA distance) are selected, their
+contours are Procrustes-aligned to the Fréchet mean, and displayed. With
+`norm_rescale = TRUE`, contours are rescaled by the contour's Frobenius norm
+so that the displayed size reflects true nuclear area.
 
-By default (`norm_rescale = TRUE`), contours are rescaled by the contour's
-Frobenius norm so that the displayed size reflects true nuclear area — the
-size gradient you see across bins is real.
+> **Note:** Because `pre_shape_embedding` was not shipped with this vignette
+> object (to keep file size small), shapes are reconstructed from the top PCA
+> components. Fine morphological detail may differ slightly from the original
+> contours — this is noted in the plot subtitle.
 
-### Unregressed
+#### Unregressed
 
-```{r montage-unreg, fig.height = 3.5}
+```{r montage-nuc-unreg, fig.height = 3.5}
 plot_csp_boundary_montage(
   group_result           = nuc_cca_unreg$all,
   tpca_result            = tpca_nucleus_info,
@@ -292,9 +425,9 @@ plot_csp_boundary_montage(
 )
 ```
 
-### Regressed
+#### Regressed
 
-```{r montage-reg, fig.height = 3.5}
+```{r montage-nuc-reg, fig.height = 3.5}
 plot_csp_boundary_montage(
   group_result           = nuc_cca_reg$all,
   tpca_result            = tpca_nucleus_info,
@@ -305,130 +438,208 @@ plot_csp_boundary_montage(
 )
 ```
 
-> **Note:** Because `pre_shape_embedding` was not shipped with this vignette
-> object (to keep file size small), shapes are reconstructed from the top PCA
-> components. Fine morphological detail may differ slightly from the original
-> contours — this is noted in the plot subtitle.
-
 ---
 
-## Step 7 — Repeat for cell contours
+# Cell shape analysis
 
-Everything above can be repeated for cell (rather than nucleus) contours by
-substituting `cell_cca_unregressed` and `cell_cca_regressed`:
+The cell shape analysis follows exactly the same structure as the nuclear shape
+analysis above. The key differences are that contours are drawn from the whole
+cell boundary rather than the nucleus, all keratinocytes are included (not just
+those with a single nucleus), and the CCA results are stored under
+`cell_cca_unregressed` and `cell_cca_regressed`. Comparing nucleus and cell
+CCA results can reveal whether a morpho-molecular axis is driven by nuclear
+shape specifically or by whole-cell shape.
 
-```{r cell-cdevca}
-plot_csp_loadings(cell_cca_unreg, cc_idx = 1)
-plot_csp_loadings(cell_cca_reg,   cc_idx = 1)
-plot_cep_loadings(cell_cca_unreg, cc_idx = 1)
-plot_cep_loadings(cell_cca_reg,   cc_idx = 1)
-```
+## Step 2 — Export cell contours and run TPCA (eval=FALSE)
 
-Comparing nucleus and cell CCA results reveals which morpho-molecular axes are
-driven by nuclear shape specifically versus whole-cell shape. Comparing
-regressed and unregressed results reveals which axes reflect biology versus
-technical variation.
-
----
-
-## Running the full pipeline on your own data
-
-The vignette above skips the TPCA and NMF computation steps to keep it
-self-contained. For a full analysis on your own Xenium or CosMx data:
-
-```{r full-pipeline, eval = FALSE}
-# seg_list is the list returned by ReadXenium() or ReadNanostring(), e.g.:
-# seg_list <- ReadXenium("path/to/xenium/output", type = c("cell", "nucleus"))
-
-# 1. Run TPCA (starting from a Seurat object with segmentation list)
-tpca_result <- export_seurat_contours(
-  obj          = obj,
-  seg_list     = seg_list,
-  contour_type = "nucleus",
-  output_dir   = "output/tpca_nucleus"
+```{r run-tpca-cell, eval = FALSE}
+tpca_cell_out <- export_seurat_contours(
+  melanoma_xenium_obj,
+  seg_list     = melanoma_xenium_segmentation_info,
+  output_dir   = "output/tpca_cell",
+  contour_type = "cell",
+  use_parallel = TRUE,
+  num_threads  = 8,
+  cell_ids     = Cells(keratinocyte_obj)
 )
-obj <- store_tpca_results(obj, tpca_result)
+keratinocyte_obj <- store_tpca_results(keratinocyte_obj, tpca_cell_out,
+                                       reduction_key_prefix = "CellShapePC_")
+```
 
-# 2. Run NMF
-nmf_results <- compute_nmf(
-  obj        = obj,
-  assay_name = "Xenium",
-  group.by   = "cell_type"
+## Step 3 — Cell covariate regression (eval=FALSE)
+
+```{r cell-regression, eval = FALSE}
+tpca_cell_cells   <- rownames(Embeddings(keratinocyte_obj, "tpca_cell"))
+shared_cell_cells <- intersect(tpca_cell_cells, nmf_cells)
+
+cell_log_area_vec     <- setNames(
+  log(tpca_cell_out$all$Metadata$area[
+        match(rownames(meta), tpca_cell_out$all$Metadata$cell_id)]),
+  rownames(meta)
 )
-obj <- store_nmf_results(obj, nmf_results)
+scaled_cell_log_area  <- setNames(scale(cell_log_area_vec[shared_cell_cells])[, 1],
+                                   shared_cell_cells)
+scaled_log_depth_cell <- setNames(scale(log_depth_vec[shared_cell_cells])[, 1],
+                                   shared_cell_cells)
+
+shape_pcs_cell       <- Embeddings(keratinocyte_obj, "tpca_cell")[shared_cell_cells, 1:10]
+expr_mat_cell        <- Embeddings(keratinocyte_obj, "nmf_all")[shared_cell_cells, ]
+shape_mat_cell_unreg <- cbind(shape_pcs_cell,
+                               scaled_log_area = scaled_cell_log_area[shared_cell_cells])
+
+shape_mat_cell_reg <- .regress_lmer(shape_mat_cell_unreg,
+                                     scaled_log_depth_cell, seg_method_vec)
+expr_mat_cell_reg  <- .regress_lmer(expr_mat_cell,
+                                     scaled_log_depth_cell, seg_method_vec)
 ```
 
-### Covariate regression
+## Step 4 — Cell CCA (eval=FALSE)
 
-Before running CCA, we recommend regressing technical covariates from both the
-shape and expression matrices. The shape matrix is constructed by concatenating
-the top shape PCs with scaled log area; the expression matrix is the NMF factor
-score matrix. Both are then adjusted for sequencing depth and segmentation
-method using `lme4::lmer`:
-
-```{r covariate-regression, eval = FALSE}
-library(lme4)
-
-shape_pcs <- Seurat::Embeddings(obj, "tpca_nucleus")[, 1:10]
-expr_mat  <- Seurat::Embeddings(obj, "nmf_all")
-meta      <- obj@meta.data
-
-# Build covariate vectors, aligned to shape matrix row order
-area_vec  <- setNames(log(meta[rownames(shape_pcs), "nucleus_area"]),
-                      rownames(shape_pcs))
-depth_vec <- setNames(log(meta[rownames(shape_pcs), "nCount_Xenium"]),
-                      rownames(shape_pcs))
-seg_vec   <- setNames(meta[rownames(shape_pcs), "segmentation_method"],
-                      rownames(shape_pcs))
-
-scaled_log_area  <- scale(area_vec)[, 1]
-scaled_log_depth <- scale(depth_vec)[, 1]
-
-# Concatenate scaled log area onto shape PCs
-shape_mat <- cbind(shape_pcs, scaled_log_area = scaled_log_area)
-
-# Regression helper: fits lmer per column, returns residuals
-regress_lmer <- function(mat, log_area, log_depth, seg_method) {
-  cell_ids  <- rownames(mat)
-  resid_mat <- matrix(NA_real_, nrow = nrow(mat), ncol = ncol(mat),
-                      dimnames = dimnames(mat))
-  for (j in seq_len(ncol(mat))) {
-    df  <- data.frame(y = mat[, j],
-                      log_area  = log_area[cell_ids],
-                      log_depth = log_depth[cell_ids],
-                      seg       = seg_method[cell_ids])
-    ok  <- complete.cases(df)
-    fit <- lmer(y ~ log_area + log_depth + (1 | seg), data = df[ok, ],
-                REML = FALSE)
-    resid_mat[ok, j] <- residuals(fit)
-  }
-  resid_mat
-}
-
-shape_mat_reg <- regress_lmer(shape_mat, scaled_log_area, scaled_log_depth, seg_vec)
-expr_mat_reg  <- regress_lmer(expr_mat,  scaled_log_area, scaled_log_depth, seg_vec)
-```
-
-### Running CCA with and without regression
-
-```{r run-cca, eval = FALSE}
-# Unregressed
-cca_unreg <- link_shape_and_factors(
-  obj       = obj,
-  shape_mat = shape_mat,
-  expr_mat  = expr_mat,
+```{r cell-cca, eval = FALSE}
+cca_cell_unreg <- link_shape_and_factors(
+  obj       = keratinocyte_obj,
+  shape_mat = shape_mat_cell_unreg,
+  expr_mat  = expr_mat_cell,
   group.by  = NULL
 )
-obj@misc$kstitch$all$nucleus_cca_unregressed <- anchor_cca_signs(cca_unreg$all)
+keratinocyte_obj <- store_kstitch_results(keratinocyte_obj, cca_cell_unreg,
+                                           reduction_name    = "cell_cca_unregressed",
+                                           reduction_key_csp = "CSPCU_",
+                                           reduction_key_cep = "CEPCU_")
 
-# Regressed
-cca_reg <- link_shape_and_factors(
-  obj       = obj,
-  shape_mat = shape_mat_reg,
-  expr_mat  = expr_mat_reg,
+cca_cell_reg <- link_shape_and_factors(
+  obj       = keratinocyte_obj,
+  shape_mat = shape_mat_cell_reg,
+  expr_mat  = expr_mat_cell_reg,
   group.by  = NULL
 )
-obj@misc$kstitch$all$nucleus_cca_regressed <- anchor_cca_signs(cca_reg$all)
+keratinocyte_obj <- store_kstitch_results(keratinocyte_obj, cca_cell_reg,
+                                           reduction_name    = "cell_cca_regressed",
+                                           reduction_key_csp = "CSPCR_",
+                                           reduction_key_cep = "CEPCR_")
+```
+
+## Cell shape results
+
+Retrieve the cell CCA results and build the `tpca_result` object. If you ran
+the full pipeline, use `tpca_cell_out$all$Metadata` in place of
+`tpca_cell_metadata`.
+
+```{r retrieve-cell-cca}
+cell_cca_unreg <- get_kstitch_results(keratinocyte_obj, "cell_cca_unregressed")
+cell_cca_reg   <- get_kstitch_results(keratinocyte_obj, "cell_cca_regressed")
+
+tpca_cell_info <- list(
+  Metadata       = tpca_cell_metadata,
+  TPCA_Embedding = Seurat::Embeddings(keratinocyte_obj, "tpca_cell"),
+  Info           = get_tpca_results(keratinocyte_obj, "cell"),
+  contour_type   = "cell",
+  output_dir     = NA_character_
+)
+```
+
+### Shape modes
+
+```{r shape-modes-cell, fig.height = 6}
+plot_shape_modes(
+  tpca_cell_info,
+  sds_to_plot = c(-2, -1, 0, 1, 2),
+  num_pcs     = 4L
+)
+```
+
+### Canonical correlations
+
+```{r cc-barplot-cell, fig.height = 4}
+k <- min(length(cell_cca_unreg$all$CC_Corr_Coefs),
+         length(cell_cca_reg$all$CC_Corr_Coefs))
+
+cc_df <- data.frame(
+  Component   = rep(paste0("CC", seq_len(k)), 2),
+  Correlation = c(cell_cca_unreg$all$CC_Corr_Coefs[seq_len(k)],
+                  cell_cca_reg$all$CC_Corr_Coefs[seq_len(k)]),
+  Analysis    = rep(c("Unregressed", "Regressed"), each = k)
+)
+
+ggplot(cc_df, aes(x = Component, y = Correlation, fill = Analysis)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Unregressed" = "steelblue",
+                               "Regressed"   = "tomato")) +
+  labs(title = "Cell CCA — canonical correlations",
+       y     = "Canonical correlation") +
+  theme_classic()
+```
+
+### CSP loadings
+
+#### Unregressed
+
+```{r csp-loadings-cell-unreg-1}
+plot_csp_loadings(cell_cca_unreg$all, cc_idx = 1)
+```
+
+```{r csp-loadings-cell-unreg-2}
+plot_csp_loadings(cell_cca_unreg$all, cc_idx = 2)
+```
+
+#### Regressed
+
+```{r csp-loadings-cell-reg-1}
+plot_csp_loadings(cell_cca_reg$all, cc_idx = 1)
+```
+
+```{r csp-loadings-cell-reg-2}
+plot_csp_loadings(cell_cca_reg$all, cc_idx = 2)
+```
+
+### CEP loadings
+
+#### Unregressed
+
+```{r cep-loadings-cell-unreg-1}
+plot_cep_loadings(cell_cca_unreg$all, cc_idx = 1)
+```
+
+```{r cep-loadings-cell-unreg-2}
+plot_cep_loadings(cell_cca_unreg$all, cc_idx = 2)
+```
+
+#### Regressed
+
+```{r cep-loadings-cell-reg-1}
+plot_cep_loadings(cell_cca_reg$all, cc_idx = 1)
+```
+
+```{r cep-loadings-cell-reg-2}
+plot_cep_loadings(cell_cca_reg$all, cc_idx = 2)
+```
+
+### CSP-binned boundary montage
+
+#### Unregressed
+
+```{r montage-cell-unreg, fig.height = 3.5}
+plot_csp_boundary_montage(
+  group_result           = cell_cca_unreg$all,
+  tpca_result            = tpca_cell_info,
+  cc_idx                 = 1L,
+  num_bins               = 10L,
+  num_cells_for_boundary = 5L,
+  norm_rescale           = TRUE
+)
+```
+
+#### Regressed
+
+```{r montage-cell-reg, fig.height = 3.5}
+plot_csp_boundary_montage(
+  group_result           = cell_cca_reg$all,
+  tpca_result            = tpca_cell_info,
+  cc_idx                 = 1L,
+  num_bins               = 10L,
+  num_cells_for_boundary = 5L,
+  norm_rescale           = TRUE
+)
 ```
 
 See `?export_seurat_contours`, `?compute_nmf`, and `?link_shape_and_factors`
