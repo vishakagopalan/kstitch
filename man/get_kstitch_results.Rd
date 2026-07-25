@@ -4,21 +4,24 @@
 \alias{get_kstitch_results}
 \title{Retrieve kstitch per-group fit results from a Seurat object}
 \usage{
-get_kstitch_results(obj, group = NULL)
+get_kstitch_results(obj, reduction_name = "kstitch", group = NULL)
 }
 \arguments{
 \item{obj}{A Seurat v5 object with kstitch results stored via
 \code{\link{store_kstitch_results}}.}
 
+\item{reduction_name}{Character. The reduction name passed to
+\code{\link{store_kstitch_results}}. Default \code{"kstitch"}.}
+
 \item{group}{Character. The group level to retrieve. If \code{NULL}
-(default), returns the full \code{obj@misc$kstitch} list.}
+(default), returns the full \code{obj@misc$kstitch[[reduction_name]]} list.}
 }
 \value{
-A list of fit objects for the requested group, or the full kstitch
-misc list if \code{group = NULL}.
+A list of fit objects for the requested group, or all groups for the
+requested reduction if \code{group = NULL}.
 }
 \description{
-Convenience accessor for \code{obj@misc$kstitch[[group]]}.
+Convenience accessor for \code{obj@misc$kstitch[[reduction_name]][[group]]}.
 }
 \seealso{
 \code{\link{store_kstitch_results}}

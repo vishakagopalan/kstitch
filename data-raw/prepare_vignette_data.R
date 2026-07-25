@@ -206,89 +206,76 @@ expr_mat_nuc_reg <- .regress_lmer(
 )
 
 # ---- 9. Run CCA — Cell, unregressed ----------------------------------------
-
 cat("Running CCA without regression (cell)...\n")
-cca_cell_unreg        <- link_shape_and_factors(
+cca_cell_unreg <- link_shape_and_factors(
   obj       = obj,
   shape_mat = shape_mat_cell_unreg,
   expr_mat  = expr_mat_cell,
   group.by  = NULL
 )
 obj <- store_kstitch_results(obj, cca_cell_unreg,
-                             reduction_key_csp  = "CSPCU_",
-                             reduction_key_cep  = "CEPCU_")
-obj@misc$kstitch$cell_cca_unregressed <- obj@misc$kstitch$all
-obj@misc$kstitch$all <- NULL
+                             reduction_name    = "cell_cca_unregressed",
+                             reduction_key_csp = "CSPCU_",
+                             reduction_key_cep = "CEPCU_")
 cat(sprintf("CCA cell unregressed stored: %d components\n",
-            length(cca_cell_unreg$CC_Corr_Coefs)))
+            length(cca_cell_unreg$all$CC_Corr_Coefs)))
 
 # ---- 10. Run CCA — Cell, regressed -----------------------------------------
-
 cat("Running CCA with regression (cell)...\n")
-cca_cell_reg        <- link_shape_and_factors(
+cca_cell_reg <- link_shape_and_factors(
   obj       = obj,
   shape_mat = shape_mat_cell_reg,
   expr_mat  = expr_mat_cell_reg,
   group.by  = NULL
 )
 obj <- store_kstitch_results(obj, cca_cell_reg,
-                             reduction_key_csp  = "CSPCR_",
-                             reduction_key_cep  = "CEPCR_")
-obj@misc$kstitch$cell_cca_regressed <- obj@misc$kstitch$all
-obj@misc$kstitch$all <- NULL
+                             reduction_name    = "cell_cca_regressed",
+                             reduction_key_csp = "CSPCR_",
+                             reduction_key_cep = "CEPCR_")
 cat(sprintf("CCA cell regressed stored: %d components\n",
-            length(cca_cell_reg$CC_Corr_Coefs)))
+            length(cca_cell_reg$all$CC_Corr_Coefs)))
 
 # ---- 11. Run CCA — Nucleus, unregressed ------------------------------------
-
 cat("Running CCA without regression (nucleus)...\n")
-cca_nuc_unreg        <- link_shape_and_factors(
+cca_nuc_unreg <- link_shape_and_factors(
   obj       = obj,
   shape_mat = shape_mat_nuc_unreg,
   expr_mat  = expr_mat_nuc,
   group.by  = NULL
 )
 obj <- store_kstitch_results(obj, cca_nuc_unreg,
-                             reduction_key_csp  = "CSPNU_",
-                             reduction_key_cep  = "CEPNU_")
-obj@misc$kstitch$nuc_cca_unregressed <- obj@misc$kstitch$all
-obj@misc$kstitch$all <- NULL
+                             reduction_name    = "nuc_cca_unregressed",
+                             reduction_key_csp = "CSPNU_",
+                             reduction_key_cep = "CEPNU_")
 cat(sprintf("CCA nucleus unregressed stored: %d components\n",
-            length(cca_nuc_unreg$CC_Corr_Coefs)))
+            length(cca_nuc_unreg$all$CC_Corr_Coefs)))
 
 # ---- 12. Run CCA — Nucleus, regressed --------------------------------------
-
 cat("Running CCA with regression (nucleus)...\n")
-cca_nuc_reg        <- link_shape_and_factors(
+cca_nuc_reg <- link_shape_and_factors(
   obj       = obj,
   shape_mat = shape_mat_nuc_reg,
   expr_mat  = expr_mat_nuc_reg,
   group.by  = NULL
 )
 obj <- store_kstitch_results(obj, cca_nuc_reg,
-                             reduction_key_csp  = "CSPNR_",
-                             reduction_key_cep  = "CEPNR_")
-
-obj@misc$kstitch$nuc_cca_regressed <- obj@misc$kstitch$all
-obj@misc$kstitch$all <- NULL
-
+                             reduction_name    = "nuc_cca_regressed",
+                             reduction_key_csp = "CSPNR_",
+                             reduction_key_cep = "CEPNR_")
 cat(sprintf("CCA nucleus regressed stored: %d components\n",
-            length(cca_nuc_reg$CC_Corr_Coefs)))
+            length(cca_nuc_reg$all$CC_Corr_Coefs)))
 
 # ---- 13. Trim and save -----------------------------------------------------
-
 obj <- DietSeurat(obj,
                   assays    = Seurat::Assays(obj),
                   dimreducs = c("tpca_cell", "tpca_nucleus", "nmf_all",
-                                "csp_cell_unreg", "cep_cell_unreg",
-                                "csp_cell_reg",   "cep_cell_reg",
-                                "csp_nuc_unreg",  "cep_nuc_unreg",
-                                "csp_nuc_reg",    "cep_nuc_reg"))
-
+                                "cell_cca_unregressed_csp", "cell_cca_unregressed_cep",
+                                "cell_cca_regressed_csp",   "cell_cca_regressed_cep",
+                                "nuc_cca_unregressed_csp",  "nuc_cca_unregressed_cep",
+                                "nuc_cca_regressed_csp",    "nuc_cca_regressed_cep"))
 out_dir  <- file.path("inst", "extdata")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 out_path <- file.path(out_dir, "kstitch_vignette_xenium.rds")
-
 saveRDS(
   list(
     obj      = obj,
@@ -299,6 +286,5 @@ saveRDS(
   ),
   out_path
 )
-
 cat(sprintf("\nSaved to: %s\n", normalizePath(out_path)))
 cat(sprintf("File size: %.1f MB\n", file.size(out_path) / 1e6))

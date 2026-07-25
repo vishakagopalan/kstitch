@@ -181,6 +181,11 @@ load_kstitch_results <- function(path, type = c("tpca", "nmf", "cca"),
   type <- match.arg(type)
   if (type == "tpca") {
     result <- .load_kendall_tpca_output(path, load_pre_shape = load_pre_shape)
+    result$contour_type <- NA_character_
+    result$group        <- "all"
+
+    result$is_groupwise <- FALSE
+
     return(list(all = result))
 
   } else {
