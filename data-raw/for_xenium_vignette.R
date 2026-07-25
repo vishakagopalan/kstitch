@@ -40,10 +40,10 @@ tpca_cell_out <- export_seurat_contours(melanoma_xenium_obj,seg_list=melanoma_xe
                                         cell_ids = all_keratinocyte_cells)
 
 num_shape_pcs_to_use <- 10
-tpca_mat <- tpca_out$all$TPCA_Embedding[,1:num_shape_pcs_to_use]
+tpca_mat <- tpca_nucleus_out$all$TPCA_Embedding[,1:num_shape_pcs_to_use]
 
-area_mat <- tpca_out$all$Metadata[, "area", drop = FALSE]
-rownames(area_mat) <- tpca_out$all$Metadata[["cell_id"]]
+area_mat <- tpca_nucleus_out$all$Metadata[, "area", drop = FALSE]
+rownames(area_mat) <- tpca_nucleus_out$all$Metadata[["cell_id"]]
 area_mat <- as.matrix(area_mat)
 
 common_ids <- intersect( rownames(area_mat), rownames(tpca_mat))
