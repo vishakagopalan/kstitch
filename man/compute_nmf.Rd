@@ -8,6 +8,7 @@ compute_nmf(
   obj,
   assay_name,
   group.by = NULL,
+  features = NULL,
   num_top_genes_per_factor = 100,
   batch_var = NULL,
   count_matrix_layer = "counts",
@@ -39,6 +40,20 @@ compute_nmf(
 groups. When NULL, all cells are treated as a single group returned under
 the key \code{"all"}.}
 
+\item{features}{NULL (default), a character vector, or a named list of
+character vectors. Controls which genes are used for NMF, bypassing
+internal gene filtering when supplied.
+\itemize{
+\item \code{NULL}: internal gene filtering via \code{gene_pct_threshold}
+and \code{selectGenes_params} is applied (existing behaviour).
+\item Character vector: the same gene set is used for all groups.
+\item Named list: one character vector per group; names must exactly
+match the group levels present in \code{obj@meta.data[[group.by]]}.
+Errors if any group is missing or extra names are present.
+}
+In all non-NULL cases, genes absent from the object are silently dropped
+and a warning is emitted if fewer than 100 genes remain for any group.}
+
 \item{num_top_genes_per_factor}{Integer. Number of top genes to record per
 NMF factor in the \code{Factor_Gene_List} output.}
 
@@ -51,7 +66,8 @@ counts (default \code{"counts"}).}
 \item{min_cells}{Integer. Groups with fewer cells are skipped.}
 
 \item{gene_pct_threshold}{Numeric in \code{[0, 1]}. Minimum fraction of cells
-expressing a gene for it to be retained.}
+expressing a gene for it to be retained. Ignored when \code{features} is
+supplied.}
 
 \item{use_normalized_factor_scores}{Logical. Whether to use quantile-
 normalised factor scores (default TRUE).}
@@ -62,7 +78,8 @@ selection is not triggered.}
 \item{nCores}{Integer. Number of cores passed to rliger.}
 
 \item{normalize_params, selectGenes_params, scaleNotCenter_params, runCINMF_params, quantileNorm_params, runOnlineINMF_params}{Named lists of additional arguments forwarded to the corresponding rliger
-functions.}
+functions. \code{selectGenes_params} is ignored when \code{features} is
+supplied.}
 
 \item{integration_method}{Character. One of \code{"consensus"} (default) or
 \code{"online"}.}

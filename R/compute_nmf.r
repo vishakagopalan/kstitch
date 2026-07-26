@@ -89,6 +89,74 @@
             params))
 }
 
+# ---- features argument resolution ------------------------------------------
+
+#' Resolve the features argument for a single group
+#'
+#' @param features NULL, a character vector, or a named list of character
+#'   vectors.
+#' @param grp Character. The current group label.
+#' @return A character vector of features for \code{grp}, or NULL if
+#'   \code{features} is NULL (signals use of internal gene filtering).
+#' @keywords internal
+.resolve_features_for_group <- function(features, grp) {
+  if (is.null(features)) return(NULL)
+  if (is.character(features)) return(features)
+  # named list — name already validated upstream
+  features[[grp]]
+}
+
+#' Validate the features argument against group levels and object features
+#'
+#' Errors if a named list does not cover all group levels exactly. For each
+#' resolved gene set, silently drops genes absent from the object and warns if
+#' fewer than 100 genes remain.
+#'
+#' @param features NULL, character vector, or named list.
+#' @param group_levels Character vector of group labels.
+#' @param all_features Character vector of all features present in the object.
+#' @return Invisibly returns TRUE. Called for side-effects only.
+#' @keywords internal
+.validate_features_arg <- function(features, group_levels, all_features) {
+  if (is.null(features)) return(invisible(TRUE))
+
+  if (is.list(features)) {
+    missing_groups <- setdiff(group_levels, names(features))
+    extra_groups   <- setdiff(names(features), group_levels)
+    if (length(missing_groups) > 0L || length(extra_groups) > 0L) {
+      stop(sprintf(
+        paste0("`features` list names do not match group levels.\n",
+               "  Missing from `features`: %s\n",
+               "  Extra in `features`:     %s"),
+        if (length(missing_groups) > 0L) paste(missing_groups, collapse = ", ") else "(none)",
+        if (length(extra_groups)   > 0L) paste(extra_groups,   collapse = ", ") else "(none)"
+      ))
+    }
+    gene_sets <- features
+  } else {
+    # plain character vector — same set applied to all groups
+    gene_sets <- stats::setNames(
+      rep(list(features), length(group_levels)),
+      group_levels
+    )
+  }
+
+  for (grp in group_levels) {
+    gs      <- gene_sets[[grp]]
+    present <- intersect(gs, all_features)
+    if (length(present) < 100L) {
+      warning(sprintf(
+        paste0("Group '%s': only %d gene(s) in `features` are present in the ",
+               "object (after dropping absent genes). This is very small; ",
+               "NMF results may be unreliable."),
+        grp, length(present)
+      ))
+    }
+  }
+
+  invisible(TRUE)
+}
+
 # ---- per-group NMF ----------------------------------------------------------
 
 .run_nmf_one_group <- function(obj,
@@ -109,7 +177,8 @@
                                integration_method,
                                stability_n_runs,
                                stability_seed,
-                               runOnlineINMF_params) {
+                               runOnlineINMF_params,
+                               features = NULL) {
 
   empty_result <- function() {
     list(
@@ -129,13 +198,21 @@
     )
   }
 
-  # gene filter
-  data_mat          <- obj[[assay_name]]@layers[[count_matrix_layer]]
-  rownames(data_mat) <- SeuratObject::Features(obj)
-  colnames(data_mat) <- Seurat::Cells(obj)
-  genes_to_use      <- names(which(Matrix::rowMeans(data_mat > 0) >= gene_pct_threshold))
-  obj               <- subset(obj, features = genes_to_use)
-  rm(data_mat)
+  # ---- gene filtering -------------------------------------------------------
+  if (!is.null(features)) {
+    # User-supplied gene set: bypass internal HVG filtering. Drop genes absent
+    # from the object (already warned upstream in .validate_features_arg).
+    all_obj_features <- SeuratObject::Features(obj)
+    genes_to_use     <- intersect(features, all_obj_features)
+    obj              <- subset(obj, features = genes_to_use)
+  } else {
+    data_mat           <- obj[[assay_name]]@layers[[count_matrix_layer]]
+    rownames(data_mat) <- SeuratObject::Features(obj)
+    colnames(data_mat) <- Seurat::Cells(obj)
+    genes_to_use       <- names(which(Matrix::rowMeans(data_mat > 0) >= gene_pct_threshold))
+    obj                <- subset(obj, features = genes_to_use)
+    rm(data_mat)
+  }
 
   if (length(Seurat::Cells(obj)) < min_cells) return(empty_result())
 
@@ -155,10 +232,16 @@
       assign(param_list, c(get(param_list), list(datasetVar = batch_var)))
   }
 
-  if (identical(selectGenes_params[["nGenes"]], "all"))
-    selectGenes_params[["nGenes"]] <- length(genes_to_use)
+  if (!is.null(features)) {
+    # Skip rliger gene selection — genes already fixed by the user.
+    # Mark all retained genes as selected so downstream rliger steps proceed.
+    obj <- rliger::selectGenes(obj, nGenes = length(genes_to_use))
+  } else {
+    if (identical(selectGenes_params[["nGenes"]], "all"))
+      selectGenes_params[["nGenes"]] <- length(genes_to_use)
+    obj <- do.call(rliger::selectGenes, c(list(obj), selectGenes_params))
+  }
 
-  obj <- do.call(rliger::selectGenes,    c(list(obj), selectGenes_params))
   obj <- do.call(rliger::scaleNotCenter, c(list(obj), scaleNotCenter_params))
 
   reduction_name  <- "nmf"
@@ -217,7 +300,7 @@
         error = function(e) NULL
       )
       if (!is.null(rep_obj)) {
-        W_list[[i]]        <- .get_feature_loadings(rep_obj, rep_reduction)
+        W_list[[i]]         <- .get_feature_loadings(rep_obj, rep_reduction)
         replicate_errors[i] <- .extract_obj_err(rep_obj, rep_reduction)
       }
     }
@@ -272,8 +355,6 @@
 
 # ---- exported function ------------------------------------------------------
 
-# ---- compute_nmf() ---------------------------------------------------------
-
 #' Run NMF on a Seurat object, optionally per cell group
 #'
 #' Wraps \code{rliger} consensus or online iNMF with Kotliar stability scoring.
@@ -285,6 +366,19 @@
 #' @param group.by Character or NULL. Column in \code{obj@@meta.data} defining
 #'   groups. When NULL, all cells are treated as a single group returned under
 #'   the key \code{"all"}.
+#' @param features NULL (default), a character vector, or a named list of
+#'   character vectors. Controls which genes are used for NMF, bypassing
+#'   internal gene filtering when supplied.
+#'   \itemize{
+#'     \item \code{NULL}: internal gene filtering via \code{gene_pct_threshold}
+#'       and \code{selectGenes_params} is applied (existing behaviour).
+#'     \item Character vector: the same gene set is used for all groups.
+#'     \item Named list: one character vector per group; names must exactly
+#'       match the group levels present in \code{obj@@meta.data[[group.by]]}.
+#'       Errors if any group is missing or extra names are present.
+#'   }
+#'   In all non-NULL cases, genes absent from the object are silently dropped
+#'   and a warning is emitted if fewer than 100 genes remain for any group.
 #' @param num_top_genes_per_factor Integer. Number of top genes to record per
 #'   NMF factor in the \code{Factor_Gene_List} output.
 #' @param batch_var Character or NULL. Column in \code{obj@@meta.data} to use
@@ -293,7 +387,8 @@
 #'   counts (default \code{"counts"}).
 #' @param min_cells Integer. Groups with fewer cells are skipped.
 #' @param gene_pct_threshold Numeric in \code{[0, 1]}. Minimum fraction of cells
-#'   expressing a gene for it to be retained.
+#'   expressing a gene for it to be retained. Ignored when \code{features} is
+#'   supplied.
 #' @param use_normalized_factor_scores Logical. Whether to use quantile-
 #'   normalised factor scores (default TRUE).
 #' @param default_num_factors Integer. Number of NMF factors when automatic
@@ -301,7 +396,8 @@
 #' @param nCores Integer. Number of cores passed to rliger.
 #' @param normalize_params,selectGenes_params,scaleNotCenter_params,runCINMF_params,quantileNorm_params,runOnlineINMF_params
 #'   Named lists of additional arguments forwarded to the corresponding rliger
-#'   functions.
+#'   functions. \code{selectGenes_params} is ignored when \code{features} is
+#'   supplied.
 #' @param integration_method Character. One of \code{"consensus"} (default) or
 #'   \code{"online"}.
 #' @param stability_n_runs Integer. Number of NMF runs for Kotliar stability
@@ -332,6 +428,7 @@
 compute_nmf <- function(obj,
                         assay_name,
                         group.by                     = NULL,
+                        features                     = NULL,
                         num_top_genes_per_factor     = 100,
                         batch_var                    = NULL,
                         count_matrix_layer           = "counts",
@@ -359,6 +456,11 @@ compute_nmf <- function(obj,
     stop(sprintf("`group.by` column '%s' not found in obj@meta.data.", group.by))
   }
 
+  # ---- validate features argument ------------------------------------------
+  if (!is.null(features) && !is.character(features) && !is.list(features)) {
+    stop("`features` must be NULL, a character vector, or a named list of character vectors.")
+  }
+
   # ---- resolve output directory --------------------------------------------
   if (!return_results && is.null(output_dir)) {
     output_dir <- file.path(tempdir(), paste0("kstitch_nmf_", .random_id()))
@@ -376,16 +478,22 @@ compute_nmf <- function(obj,
     groups   <- split(all_cells, meta_vec)
   }
 
-  is_groupwise <- !is.null(group.by)
+  is_groupwise  <- !is.null(group.by)
+  group_levels  <- names(groups)
+  all_features  <- SeuratObject::Features(obj)
+
+  # ---- validate features against group levels and object features ----------
+  .validate_features_arg(features, group_levels, all_features)
 
   # ---- per-group NMF -------------------------------------------------------
   results <- list()
 
-  for (grp in names(groups)) {
+  for (grp in group_levels) {
     if (verbose) message(sprintf("Running NMF for group '%s' ...", grp))
 
-    grp_cells <- groups[[grp]]
-    grp_obj   <- subset(obj, cells = grp_cells)
+    grp_cells     <- groups[[grp]]
+    grp_obj       <- subset(obj, cells = grp_cells)
+    grp_features  <- .resolve_features_for_group(features, grp)
 
     fit <- .run_nmf_one_group(
       obj                          = grp_obj,
@@ -406,7 +514,8 @@ compute_nmf <- function(obj,
       integration_method           = integration_method,
       stability_n_runs             = stability_n_runs,
       stability_seed               = stability_seed,
-      runOnlineINMF_params         = runOnlineINMF_params
+      runOnlineINMF_params         = runOnlineINMF_params,
+      features                     = grp_features
     )
 
     fit$group        <- grp
