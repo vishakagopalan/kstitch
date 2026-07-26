@@ -84,7 +84,7 @@
   params <- .strip_reserved(params, c("k", "lambda", "seed", "nCores", "verbose",
                                       "datasetVar", "layer", "assay", "reduction"))
   do.call(rliger::runOnlineINMF,
-          c(list(obj, k = k, minibatchSize = mini_batch_size,
+          c(list(obj, k = k, minibatchSize = mini_batch_size, verbose=F,
                  seed = seed, nCores = nCores, reduction = reduction),
             params))
 }
@@ -158,7 +158,6 @@
 }
 
 # ---- per-group NMF ----------------------------------------------------------
-
 .run_nmf_one_group <- function(obj,
                                assay_name,
                                num_top_genes_per_factor,
@@ -199,27 +198,31 @@
   }
 
   # ---- gene filtering -------------------------------------------------------
+  data_mat           <- obj[[assay_name]]@layers[[count_matrix_layer]]
+  rownames(data_mat) <- SeuratObject::Features(obj)
+  colnames(data_mat) <- Seurat::Cells(obj)
+
   if (!is.null(features)) {
-    # User-supplied gene set: bypass internal HVG filtering. Drop genes absent
-    # from the object (already warned upstream in .validate_features_arg).
-    all_obj_features <- SeuratObject::Features(obj)
-    genes_to_use     <- intersect(features, all_obj_features)
-    obj              <- subset(obj, features = genes_to_use)
+    # User-supplied gene set: intersect with object features (absent genes
+    # already warned upstream in .validate_features_arg), then apply
+    # gene_pct_threshold filter identically to the default path.
+    candidate_genes <- intersect(features, SeuratObject::Features(obj))
+    genes_to_use    <- names(which(
+      Matrix::rowMeans(data_mat[candidate_genes, , drop = FALSE] > 0) >= gene_pct_threshold
+    ))
   } else {
-    data_mat           <- obj[[assay_name]]@layers[[count_matrix_layer]]
-    rownames(data_mat) <- SeuratObject::Features(obj)
-    colnames(data_mat) <- Seurat::Cells(obj)
-    genes_to_use       <- names(which(Matrix::rowMeans(data_mat > 0) >= gene_pct_threshold))
-    obj                <- subset(obj, features = genes_to_use)
-    rm(data_mat)
+    genes_to_use <- names(which(Matrix::rowMeans(data_mat > 0) >= gene_pct_threshold))
   }
+  rm(data_mat)
+
+  obj <- subset(obj, features = genes_to_use)
 
   if (length(Seurat::Cells(obj)) < min_cells) return(empty_result())
 
   mini_batch_size <- if (length(Seurat::Cells(obj)) > 5000) 5000L else
     max(2L, floor(length(Seurat::Cells(obj)) / 2))
 
-  # preprocess
+  # ---- preprocess -----------------------------------------------------------
   if (!"layer" %in% names(normalize_params))
     normalize_params[["layer"]] <- count_matrix_layer
 
@@ -233,9 +236,14 @@
   }
 
   if (!is.null(features)) {
-    # Skip rliger gene selection — genes already fixed by the user.
-    # Mark all retained genes as selected so downstream rliger steps proceed.
-    obj <- rliger::selectGenes(obj, nGenes = length(genes_to_use))
+    # VariableFeatures<-.Assay5 intersects against rownames(assay) and errors
+    # if none match — this fails for some cell type subsets even when genes are
+    # present via Features(). Bypass by writing directly to the assay metadata.
+    row_names    <- rownames(obj@assays[[assay_name]][[]])
+    rank_values  <- match(row_names, genes_to_use)
+    names(rank_values) <- row_names
+    obj@assays[[assay_name]][["var.features"]]      <- genes_to_use
+    obj@assays[[assay_name]][["var.features.rank"]] <- rank_values
   } else {
     if (identical(selectGenes_params[["nGenes"]], "all"))
       selectGenes_params[["nGenes"]] <- length(genes_to_use)
@@ -244,20 +252,20 @@
 
   obj <- do.call(rliger::scaleNotCenter, c(list(obj), scaleNotCenter_params))
 
-  reduction_name  <- "nmf"
-  n_factors       <- default_num_factors
-  fit_ok          <- FALSE
+  reduction_name <- "nmf"
+  n_factors      <- default_num_factors
+  fit_ok         <- FALSE
 
-  # fit with k fallback
+  # ---- fit with k fallback --------------------------------------------------
   while (!fit_ok) {
     fit_ok  <- TRUE
     obj_try <- tryCatch({
       if (integration_method == "online") {
         .run_one_online_fit(obj, n_factors, mini_batch_size,
-                            seed   = runOnlineINMF_params[["seed"]] %||% stability_seed,
+                            seed      = runOnlineINMF_params[["seed"]] %||% stability_seed,
                             reduction = reduction_name,
-                            params = runOnlineINMF_params,
-                            nCores = nCores)
+                            params    = runOnlineINMF_params,
+                            nCores    = nCores)
       } else {
         rp <- .strip_reserved(
           if (length(runCINMF_params) > 0L) runCINMF_params else runOnlineINMF_params,
@@ -266,8 +274,8 @@
         )
         do.call(rliger::runCINMF,
                 c(list(obj, k = n_factors, minibatchSize = mini_batch_size,
-                       seed   = runCINMF_params[["seed"]] %||% stability_seed,
-                       nCores = nCores, reduction = reduction_name),
+                       seed      = runCINMF_params[["seed"]] %||% stability_seed,
+                       nCores    = nCores, reduction = reduction_name),
                   rp))
       }
     }, error = function(e) { message(e$message); NULL })
@@ -283,9 +291,9 @@
     }
   }
 
-  # stability runs
-  stability_score   <- c(silhouette = NA_real_, entropy = NA_real_)
-  replicate_errors  <- numeric(0)
+  # ---- stability runs -------------------------------------------------------
+  stability_score  <- c(silhouette = NA_real_, entropy = NA_real_)
+  replicate_errors <- numeric(0)
 
   if (stability_n_runs >= 2L) {
     W_list <- vector("list", stability_n_runs)
@@ -293,10 +301,10 @@
       rep_reduction <- paste0(reduction_name, "_stab_", i)
       rep_obj <- tryCatch(
         .run_one_online_fit(obj, n_factors, mini_batch_size,
-                            seed = stability_seed + i - 1L,
+                            seed      = stability_seed + i - 1L,
                             reduction = rep_reduction,
-                            params = runOnlineINMF_params,
-                            nCores = nCores),
+                            params    = runOnlineINMF_params,
+                            nCores    = nCores),
         error = function(e) NULL
       )
       if (!is.null(rep_obj)) {
@@ -309,12 +317,12 @@
       stability_score <- .compute_kotliar_stability(W_list, n_factors)
   }
 
-  # quantile normalisation
+  # ---- quantile normalisation -----------------------------------------------
   obj <- do.call(rliger::quantileNorm,
                  c(list(obj, reduction = reduction_name), quantileNorm_params))
   norm_reduction <- paste0(reduction_name, "Norm")
 
-  # extract
+  # ---- extract results ------------------------------------------------------
   if (use_normalized_factor_scores) {
     nmf_mat     <- .get_embeddings(obj, norm_reduction)
     nmf_loading <- .get_feature_loadings(obj, norm_reduction)
@@ -327,8 +335,8 @@
     colnames(nmf_loading) <- gsub(reduction_name, "Factor", colnames(nmf_loading))
   }
 
-  n_top        <- min(num_top_genes_per_factor, nrow(nmf_loading))
-  gene_list    <- lapply(seq_len(ncol(nmf_loading)), function(j)
+  n_top     <- min(num_top_genes_per_factor, nrow(nmf_loading))
+  gene_list <- lapply(seq_len(ncol(nmf_loading)), function(j)
     names(sort(nmf_loading[, j], decreasing = TRUE)[seq_len(n_top)]))
   names(gene_list) <- paste0("Factor_", seq_along(gene_list))
 
