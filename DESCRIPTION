@@ -22,7 +22,8 @@ Imports:
     Seurat,
     tibble,
     tidyr,
-    rhdf5
+    rhdf5,
+    mockery
 URL: https://github.com/vishakagopalan/kstitch
 BugReports: https://github.com/vishakagopalan/kstitch/issues
 Suggests: 

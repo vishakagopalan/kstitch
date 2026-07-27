@@ -12,7 +12,7 @@ plot_mu_history(tpca_result, n = 9L, colour = "steelblue", linewidth = 0.6)
 attribute containing \code{$mu_history} (a 3-D array,
 iterations \eqn{\times} 2 \eqn{\times} landmarks).}
 
-\item{n}{Integer. Number of evenly-spaced iterations to display.
+\item{n}{Integer. Number of evenly-spaced iterawtions to display.
 Default \code{9L}.}
 
 \item{colour}{Fill/outline colour for contours. Default \code{"steelblue"}.}

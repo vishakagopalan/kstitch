@@ -11,7 +11,7 @@
 #'
 #' @param tpca_result A single group's TPCA result — i.e. one element of the
 #'   named list returned by \code{\link{run_tpca}} or
-#'   \code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+#'   \code{\link{run_tpca_from_seurat}} (e.g. \code{tpca_result$all} or
 #'   \code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
 #'   list directly.
 #' @param sds_to_plot Numeric vector of SD values to plot along each PC.
@@ -181,7 +181,7 @@ plot_csp_loadings <- function(group_result,
 #' by \code{sqrt(area)} so the displayed size reflects true cell area. Area
 #' values are read from the \code{Metadata} element of \code{tpca_result},
 #' which is returned directly by \code{\link{run_tpca}} and
-#' \code{\link{export_seurat_contours}} — no disk access is required.
+#' \code{\link{run_tpca_from_seurat}} — no disk access is required.
 #'
 #' If the pre-shape embedding is not available in \code{tpca_result}, shapes
 #' are reconstructed from the top \code{reconstruction_pcs} PCA components.
@@ -191,7 +191,7 @@ plot_csp_loadings <- function(group_result,
 #'   \code{\link{link_shape_and_factors}}.
 #' @param tpca_result A single group's TPCA result — i.e. one element of the
 #'   named list returned by \code{\link{run_tpca}} or
-#'   \code{\link{export_seurat_contours}} (e.g. \code{tpca_result$all} or
+#'   \code{\link{run_tpca_from_seurat}} (e.g. \code{tpca_result$all} or
 #'   \code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
 #'   list directly.
 #' @param cc_idx Integer. Which CSP component to use for binning. Default 1L.
@@ -365,7 +365,7 @@ plot_csp_boundary_montage <- function(group_result,
 #'   \code{store_history = TRUE}. Must have a \code{"frechet_history"}
 #'   attribute containing \code{$mu_history} (a 3-D array,
 #'   iterations \eqn{\times} 2 \eqn{\times} landmarks).
-#' @param n Integer. Number of evenly-spaced iterations to display.
+#' @param n Integer. Number of evenly-spaced iterawtions to display.
 #'   Default \code{9L}.
 #' @param colour Fill/outline colour for contours. Default \code{"steelblue"}.
 #' @param linewidth Line width passed to \code{geom_path}. Default \code{0.6}.
@@ -458,4 +458,66 @@ plot_mu_history <- function(tpca_result,
   }
 
   ggpubr::ggarrange(p_grid, p_overlay, ncol = 2L, nrow = 1L)
+}
+
+#' Plot Fréchet mean convergence
+#'
+#' Plots the gradient norm at each iteration of the Kendall TPCA Fréchet mean
+#' computation. Requires \code{run_tpca()} or \code{run_tpca_from_seurat()}
+#' to have been called with \code{store_history = TRUE}.
+#'
+#' @param result A TPCA result object carrying a \code{"frechet_history"}
+#'   attribute (i.e. the return value of \code{run_tpca()} or
+#'   \code{load_kstitch_results()} when \code{store_history = TRUE}).
+#' @param log_scale Logical. If \code{TRUE} (default), the y-axis is
+#'   log10-transformed, which makes exponential decay easier to read.
+#' @param point_size Numeric. Size of points. Default \code{1.5}.
+#' @param line_width Numeric. Width of the connecting line. Default \code{0.7}.
+#' @param title Character. Plot title. Defaults to
+#'   \code{"Fréchet mean convergence"}.
+#'
+#' @return A \code{ggplot} object.
+#'
+#' @seealso \code{\link{plot_mu_history}}
+#' @export
+plot_frechet_convergence <- function(
+    result,
+    log_scale  = TRUE,
+    point_size = 1.5,
+    line_width = 0.7,
+    title      = "Fr\u00e9chet mean convergence"
+) {
+  history <- attr(result, "frechet_history")
+  if (is.null(history)) {
+    stop(
+      "No 'frechet_history' attribute found. ",
+      "Re-run with store_history = TRUE."
+    )
+  }
+
+  grad_norm <- history[["grad_norm"]]
+  if (is.null(grad_norm) || length(grad_norm) == 0) {
+    stop("'frechet_history$grad_norm' is missing or empty.")
+  }
+
+  df <- data.frame(
+    iteration = seq_along(grad_norm),
+    grad_norm = grad_norm
+  )
+
+  p <- ggplot2::ggplot(df, ggplot2::aes(x = iteration, y = grad_norm)) +
+    ggplot2::geom_line(linewidth = line_width, colour = "grey40") +
+    ggplot2::geom_point(size = point_size, colour = "steelblue") +
+    ggplot2::labs(
+      title = title,
+      x     = "Iteration",
+      y     = if (log_scale) "Gradient norm (log10)" else "Gradient norm"
+    ) +
+    ggplot2::theme_bw()
+
+  if (log_scale) {
+    p <- p + ggplot2::scale_y_log10()
+  }
+
+  p
 }

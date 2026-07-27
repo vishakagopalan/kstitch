@@ -207,7 +207,7 @@ TPCA is restricted to cells that have exactly one nucleus.
 keratinocytes_cells_with_single_nucleus <-
   rownames(na.omit(Embeddings(precomputed_obj, "tpca_nucleus")))
 
-tpca_nucleus_out <- export_seurat_contours(
+tpca_nucleus_out <- run_tpca_from_seurat(
   melanoma_xenium_obj,
   seg_list     = melanoma_xenium_segmentation_info,
   output_dir   = "output/tpca_nucleus",
@@ -454,7 +454,7 @@ shape specifically or by whole-cell shape.
 ## Step 2 — Export cell contours and run TPCA (eval=FALSE)
 
 ```{r run-tpca-cell, eval = FALSE}
-tpca_cell_out <- export_seurat_contours(
+tpca_cell_out <- run_tpca_from_seurat(
   melanoma_xenium_obj,
   seg_list     = melanoma_xenium_segmentation_info,
   output_dir   = "output/tpca_cell",

@@ -44,7 +44,7 @@
 #'   \code{load_kstitch_results(..., type = "tpca")}.
 #' @seealso \code{\link{load_kstitch_results}}, \code{\link{store_tpca_results}}
 #' @export
-export_seurat_contours <- function(obj,
+run_tpca_from_seurat <- function(obj,
                                    seg_list,
                                    contour_type      = c("cell", "nucleus"),
                                    output_dir        = NULL,
