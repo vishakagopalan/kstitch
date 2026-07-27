@@ -184,8 +184,7 @@ export_seurat_contours <- function(obj,
     found <- intersect(candidates, names(df))
     if (length(found) == 0L)
       stop(sprintf(
-        "Could not find column '%s' in segmentation data frame. ",
-        "Available columns: %s.",
+        "Could not find column '%s' in segmentation data frame. Available columns: %s.",
         target, paste(names(df), collapse = ", ")
       ))
     if (!target %in% names(df))
