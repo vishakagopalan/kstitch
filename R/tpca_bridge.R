@@ -85,6 +85,7 @@
                              num_threads,
                              frechet_mean_tol,
                              max_frechet_iter,
+                             store_history,          # <-- added
                              kendall_tpca) {
   py_cell_ids <- if (!is.null(cell_ids))
     reticulate::r_to_py(as.list(cell_ids)) else NULL
@@ -100,10 +101,8 @@
     cell_id_col            = cell_id_col
   )
 
-  # run_kendall_tpca reads Shape_Metadata.csv.gz which always uses "cell_id"
-  # regardless of the source parquet column name.
   message("Running TPCA ...")
-  kendall_tpca$run_kendall_tpca(
+  py_result <- kendall_tpca$run_kendall_tpca(  # <-- capture return value
     pre_shape_input_dir   = work_dir,
     output_dir            = work_dir,
     cell_ids_to_analyze   = py_cell_ids,
@@ -112,10 +111,21 @@
     eta                   = eta,
     use_parallel          = use_parallel,
     num_threads           = as.integer(num_threads),
-    frechet_mean_tol      = frechet_mean_tol
+    frechet_mean_tol      = frechet_mean_tol,
+    store_history         = store_history       # <-- added
   )
-}
 
+  # Return history if requested; NULL otherwise (callers ignore the return
+  # value today, so this is backwards-compatible).
+  if (store_history) {
+    list(
+      grad_norm  = as.numeric(py_result[[3]]),
+      mu_history = py_result[[2]]
+    )
+  } else {
+    NULL
+  }
+}
 
 
 # ---- exported functions -----------------------------------------------------
@@ -189,6 +199,13 @@ load_kstitch_results <- function(path, type = c("tpca", "nmf", "cca"),
 #' @param max_frechet_iter Maximum iterations. Default 1000L.
 #' @param load_pre_shape Logical. Whether to load the pre-shape embedding
 #'   into \code{Info$pre_shape_embedding}. Default \code{TRUE}.
+#'
+#' @param store_history Logical. If \code{TRUE}, the Fréchet mean iteration
+#'   history is attached to the returned list as
+#'   \code{attr(result, "frechet_history")}, a named list with elements
+#'   \code{$grad_norm} (numeric vector of per-iteration gradient norms) and
+#'   \code{$mu_history} (array of mean shapes at each iteration). Only
+#'   meaningful when \code{return_results = TRUE}. Default \code{FALSE}.
 #' @param return_results Logical. If \code{TRUE} (default), results are
 #'   loaded into R and returned. If \code{FALSE}, results are written to
 #'   disk and only the output paths are returned.
@@ -216,7 +233,8 @@ run_tpca <- function(boundary_parquet_path,
                      frechet_mean_tol = 1e-4,
                      max_frechet_iter = 1000L,
                      return_results   = TRUE,
-                     load_pre_shape   = TRUE) {
+                     load_pre_shape   = TRUE,
+                     store_history    = FALSE) {   # <-- added
 
   contour_type          <- match.arg(contour_type)
   boundary_parquet_path <- path.expand(boundary_parquet_path)
@@ -253,10 +271,11 @@ run_tpca <- function(boundary_parquet_path,
     num_threads           = num_threads,
     frechet_mean_tol      = frechet_mean_tol,
     max_frechet_iter      = max_frechet_iter,
+    store_history         = store_history,     # <-- added
     kendall_tpca          = kendall_tpca
   )
 
-  do.call(.run_tpca_single, c(shared_args, list(
+  history <- do.call(.run_tpca_single, c(shared_args, list(  # <-- capture
     cell_ids = cell_ids,
     work_dir = work_dir
   )))
@@ -270,12 +289,15 @@ run_tpca <- function(boundary_parquet_path,
   }
 
   message("Reading TPCA results ...")
-
-  message("Reading TPCA results ...")
   result              <- .load_kendall_tpca_output(work_dir,
                                                    load_pre_shape = load_pre_shape)
   result$contour_type <- contour_type
   result$output_dir   <- if (resolved$is_temp) NULL else work_dir
+
+  if (store_history) {
+    attr(result, "frechet_history") <- history  # <-- attach
+  }
+
   result
 }
 
