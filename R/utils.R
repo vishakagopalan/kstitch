@@ -1,18 +1,14 @@
-# ---- .serialize_group_results() --------------------------------------------
+# ---- .serialize_result() ---------------------------------------------------
 
-# Serialize a named list of per-group results to RDS files under output_dir.
-# Returns a named character vector of file paths (same keys as `results`).
-# `type` is a short string used only in the console message ("nmf" or "cca").
-.serialize_group_results <- function(results, output_dir, type = "nmf") {
-  paths <- stats::setNames(
-    file.path(output_dir, paste0(names(results), ".rds")),
-    names(results)
-  )
-  for (grp in names(results)) {
-    saveRDS(results[[grp]], file = paths[[grp]])
-  }
-  message("Results not loaded into memory (return_results = FALSE).")
-  message(sprintf("  %s results written to: %s", toupper(type), output_dir))
-  message(sprintf("  Load individual groups with load_kstitch_results(path, type = \"%s\")", type))
-  paths
+# Serialize a single result to an RDS file under output_dir.
+# Returns the file path. `type` is used only in the console message.
+.serialize_result <- function(result, output_dir, type = "nmf") {
+  path <- file.path(output_dir, "all.rds")
+  saveRDS(result, file = path)
+  message(sprintf("Result not loaded into memory (return_results = FALSE)."))
+  message(sprintf("  %s result written to: %s", toupper(type), path))
+  message(sprintf(
+    "  Load with load_kstitch_results(\"%s\", type = \"%s\")", path, type
+  ))
+  path
 }

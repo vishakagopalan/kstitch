@@ -7,16 +7,9 @@
   )
   if (!nzchar(fixture_dir)) return(NULL)
   result <- load_kstitch_results(fixture_dir, type = "tpca")
-  rownames(result$all$TPCA_Embedding)
+  rownames(result$TPCA_Embedding)
 }
 
-.split_cell_ids <- function(cell_ids) {
-  mid <- floor(length(cell_ids) / 2)
-  list(
-    groupA = cell_ids[seq_len(mid)],
-    groupB = cell_ids[seq(mid + 1L, length(cell_ids))]
-  )
-}
 
 .boundary_path <- function() {
   system.file(
@@ -39,6 +32,8 @@
   cell_id_col  = "cell"
 )
 
+# ---- load_pre_shape ---------------------------------------------------------
+
 test_that("run_tpca load_pre_shape = FALSE sets pre_shape_embedding to NULL", {
   skip_on_ci()
   skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
@@ -50,40 +45,12 @@ test_that("run_tpca load_pre_shape = FALSE sets pre_shape_embedding to NULL", {
     .std_run_args
   ))
 
-  expect_null(result$all$Info$pre_shape_embedding)
-  expect_true(is.matrix(result$all$TPCA_Embedding))
-  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in%
-                    names(result$all$Info)))
+  expect_null(result$Info$pre_shape_embedding)
+  expect_true(is.matrix(result$TPCA_Embedding))
+  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(result$Info)))
 })
 
-test_that("run_tpca groupwise load_pre_shape = FALSE sets pre_shape_embedding to NULL for all groups", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
 
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-
-  result <- do.call(run_tpca, c(
-    list(boundary_parquet_path = .boundary_path(),
-         output_dir            = withr::local_tempdir(),
-         cell_groups           = cell_groups,
-         load_pre_shape        = FALSE),
-    .std_run_args
-  ))
-
-  for (grp in c("groupA", "groupB")) {
-    expect_null(result[[grp]]$Info$pre_shape_embedding,
-                label = paste(grp, "pre_shape_embedding is NULL"))
-    expect_true(is.matrix(result[[grp]]$TPCA_Embedding),
-                label = paste(grp, "TPCA_Embedding present"))
-  }
-})
 
 test_that("load_kstitch_results load_pre_shape = FALSE sets pre_shape_embedding to NULL", {
   skip_on_ci()
@@ -92,13 +59,13 @@ test_that("load_kstitch_results load_pre_shape = FALSE sets pre_shape_embedding 
   result <- load_kstitch_results(.fixture_dir(), type = "tpca",
                                  load_pre_shape = FALSE)
 
-  expect_null(result$all$Info$pre_shape_embedding)
-  expect_true(is.matrix(result$all$TPCA_Embedding))
+  expect_null(result$Info$pre_shape_embedding)
+  expect_true(is.matrix(result$TPCA_Embedding))
 })
 
 # ---- single-group: temp dir -------------------------------------------------
 
-test_that("run_tpca defaults to a temp directory and cleans it up", {
+test_that("run_tpca defaults to a temp directory and returns a flat result", {
   skip_on_ci()
   skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
 
@@ -107,13 +74,14 @@ test_that("run_tpca defaults to a temp directory and cleans it up", {
     .std_run_args
   ))
 
-  expect_named(result, "all")
-  expect_null(result$all$output_dir)
-  expect_equal(result$all$group, "all")
-  expect_false(result$all$is_groupwise)
-  expect_true(is.matrix(result$all$TPCA_Embedding))
-  expect_true(nrow(result$all$TPCA_Embedding) > 0)
-  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(result$all$Info)))
+  # flat result — no "all" wrapper, no group/is_groupwise fields
+  expect_true("TPCA_Embedding" %in% names(result))
+  expect_null(result$output_dir)
+  expect_false("group"        %in% names(result))
+  expect_false("is_groupwise" %in% names(result))
+  expect_true(is.matrix(result$TPCA_Embedding))
+  expect_true(nrow(result$TPCA_Embedding) > 0)
+  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(result$Info)))
 })
 
 # ---- single-group: explicit output_dir --------------------------------------
@@ -128,17 +96,15 @@ test_that("run_tpca with an explicit output_dir leaves files on disk", {
     .std_run_args
   ))
 
-  expect_named(result, "all")
-  expect_equal(result$all$output_dir, out_dir)
-  expect_equal(result$all$group, "all")
-  expect_false(result$all$is_groupwise)
+  expect_true("TPCA_Embedding" %in% names(result))
+  expect_equal(result$output_dir, out_dir)
   expect_true(file.exists(file.path(out_dir, "TPCA_Info.h5")))
   expect_true(file.exists(file.path(out_dir, "Shape_Metadata.csv.gz")))
 })
 
 # ---- single-group: return_results = FALSE -----------------------------------
 
-test_that("run_tpca return_results = FALSE returns paths and preserves files", {
+test_that("run_tpca return_results = FALSE returns output_path and preserves files", {
   skip_on_ci()
   skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
 
@@ -152,12 +118,9 @@ test_that("run_tpca return_results = FALSE returns paths and preserves files", {
     .std_run_args
   ))
 
-  expect_named(result, c("output_paths", "fields"))
-  expect_true(is.character(result$output_paths))
-  expect_true(length(result$output_paths) == 1L)
-  expect_true(file.exists(file.path(result$output_paths[[1]], "TPCA_Info.h5")))
-  expect_true(file.exists(file.path(result$output_paths[[1]], "Shape_Metadata.csv.gz")))
-  expect_null(result$TPCA_Embedding)
+  expect_named(result, "output_path")
+  expect_true(file.exists(file.path(result$output_path, "TPCA_Info.h5")))
+  expect_true(file.exists(file.path(result$output_path, "Shape_Metadata.csv.gz")))
 })
 
 test_that("run_tpca return_results = FALSE with NULL output_dir preserves temp files", {
@@ -173,15 +136,15 @@ test_that("run_tpca return_results = FALSE with NULL output_dir preserves temp f
     .std_run_args
   ))
 
-  expect_named(result, c("output_paths", "fields"))
-  expect_true(file.exists(file.path(result$output_paths[[1]], "TPCA_Info.h5")))
+  expect_named(result, "output_path")
+  expect_true(file.exists(file.path(result$output_path, "TPCA_Info.h5")))
 })
 
-test_that("load_kstitch_results type='tpca' loads deferred results correctly", {
+test_that("load_kstitch_results type='tpca' loads deferred result correctly", {
   skip_on_ci()
   skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
 
-  out_dir <- withr::local_tempdir()
+  out_dir  <- withr::local_tempdir()
   deferred <- do.call(run_tpca, c(
     list(
       boundary_parquet_path = .boundary_path(),
@@ -191,12 +154,14 @@ test_that("load_kstitch_results type='tpca' loads deferred results correctly", {
     .std_run_args
   ))
 
-  loaded <- load_kstitch_results(deferred$output_paths[[1]], type = "tpca")
+  loaded <- load_kstitch_results(deferred$output_path, type = "tpca")
 
-  expect_true(is.matrix(loaded$all$TPCA_Embedding))
-  expect_true(nrow(loaded$all$TPCA_Embedding) > 0)
-  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$all$Info)))
-  expect_s3_class(loaded$all$Metadata, "data.frame")
+  expect_true("TPCA_Embedding" %in% names(loaded))
+  expect_false("all" %in% names(loaded))
+  expect_true(is.matrix(loaded$TPCA_Embedding))
+  expect_true(nrow(loaded$TPCA_Embedding) > 0)
+  expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$Info)))
+  expect_s3_class(loaded$Metadata, "data.frame")
 })
 
 # ---- single-group: known output ---------------------------------------------
@@ -211,16 +176,16 @@ test_that("run_tpca reproduces known output on fixture contours", {
     list(boundary_parquet_path = .boundary_path(), output_dir = tmp_out),
     .std_run_args
   ))
-  expected <- load_kstitch_results(.fixture_dir(), type = "tpca")$all
+  expected <- load_kstitch_results(.fixture_dir(), type = "tpca")
 
-  expect_setequal(rownames(result$all$TPCA_Embedding), rownames(expected$TPCA_Embedding))
-  expect_equal(ncol(result$all$TPCA_Embedding), ncol(expected$TPCA_Embedding))
+  expect_setequal(rownames(result$TPCA_Embedding), rownames(expected$TPCA_Embedding))
+  expect_equal(ncol(result$TPCA_Embedding), ncol(expected$TPCA_Embedding))
 
   common_ids  <- rownames(expected$TPCA_Embedding)
-  res_aligned <- result$all$TPCA_Embedding[common_ids, , drop = FALSE]
+  res_aligned <- result$TPCA_Embedding[common_ids, , drop = FALSE]
   exp_aligned <- expected$TPCA_Embedding[common_ids, , drop = FALSE]
 
-  expect_equal(result$all$Info$variances, expected$Info$variances, tolerance = 1e-4)
+  expect_equal(result$Info$variances, expected$Info$variances, tolerance = 1e-4)
 
   vars       <- expected$Info$variances
   rel_gap    <- abs(diff(vars)) / (vars[-length(vars)] + 1e-12)
@@ -250,16 +215,15 @@ test_that("Frechet mean is finite on fixture contours", {
   skip_if(!nzchar(.fixture_dir()), "expected tpca fixture not found")
 
   result <- load_kstitch_results(.fixture_dir(), type = "tpca")
-  expect_true(all(is.finite(result$all$Info$frechet_mean)))
+  expect_true(all(is.finite(result$Info$frechet_mean)))
 })
 
-# ---- single-group: parallel vs serial ---------------------------------------
+# ---- warm-start mu ----------------------------------------------------------
 
 test_that("frechet accepts a warm-start mu and converges faster than cold start", {
   skip_on_ci()
   skip_if(!nzchar(.fixture_dir()), "TPCA fixture not found")
 
-  np   <- reticulate::import("numpy", convert = FALSE)
   ktpy <- reticulate::import_from_path(
     "kendall_tpca",
     path = system.file("python", package = "kstitch")
@@ -281,24 +245,19 @@ test_that("frechet accepts a warm-start mu and converges faster than cold start"
   mu_rand_r <- mu_rand_r / norm(mu_rand_r, type = "F")
   mu_rand   <- reticulate::r_to_py(mu_rand_r)
 
-  mu_warm_hist <- ktpy$frechet(
-    X, eta = 1, tol = 1e-4, max_iter = 1000L,
-    store_history = TRUE, mu = mu_true
-  )
-  iters_warm <- length(mu_warm_hist[[2L]])
+  mu_warm_hist <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L,
+                               store_history = TRUE, mu = mu_true)
+  iters_warm   <- length(mu_warm_hist[[2L]])
 
-  mu_cold_hist <- ktpy$frechet(
-    X, eta = 1, tol = 1e-4, max_iter = 1000L,
-    store_history = TRUE
-  )
-  iters_cold <- length(mu_cold_hist[[2L]])
+  mu_cold_hist <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L,
+                               store_history = TRUE)
+  iters_cold   <- length(mu_cold_hist[[2L]])
 
   expect_true(iters_warm < iters_cold,
               label = "warm start from true mean converges faster than cold start")
 
-  mu_rand_result <- ktpy$frechet(
-    X, eta = 1, tol = 1e-4, max_iter = 1000L, mu = mu_rand
-  )
+  mu_rand_result <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L,
+                                 mu = mu_rand)
   expect_true(all(is.finite(reticulate::py_to_r(mu_rand_result))),
               label = "frechet with random mu warm start returns finite result")
 })
@@ -318,8 +277,7 @@ test_that("run_kendall_tpca accepts a warm-start mu and matches cold start outpu
   raw <- rhdf5::h5read(pre_shape_path, "pre_shape_space_embedding")
   X   <- reticulate::r_to_py(aperm(raw, c(3L, 2L, 1L)))
 
-  mu_true <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L)
-
+  mu_true  <- ktpy$frechet(X, eta = 1, tol = 1e-4, max_iter = 1000L)
   out_cold <- withr::local_tempdir()
   out_warm <- withr::local_tempdir()
 
@@ -329,25 +287,14 @@ test_that("run_kendall_tpca accepts a warm-start mu and matches cold start outpu
       file.path(out_warm, "Shape_Metadata.csv.gz"))
   )
 
-  ktpy$run_kendall_tpca(
-    pre_shape_input_dir   = .fixture_dir(),
-    output_dir            = out_cold,
-    eta                   = 1,
-    frechet_mean_tol      = 1e-4,
-    max_frechet_mean_iter = 1000L
-  )
+  ktpy$run_kendall_tpca(pre_shape_input_dir = .fixture_dir(), output_dir = out_cold,
+                        eta = 1, frechet_mean_tol = 1e-4, max_frechet_mean_iter = 1000L)
+  ktpy$run_kendall_tpca(pre_shape_input_dir = .fixture_dir(), output_dir = out_warm,
+                        eta = 1, frechet_mean_tol = 1e-4, max_frechet_mean_iter = 1000L,
+                        mu = mu_true)
 
-  ktpy$run_kendall_tpca(
-    pre_shape_input_dir   = .fixture_dir(),
-    output_dir            = out_warm,
-    eta                   = 1,
-    frechet_mean_tol      = 1e-4,
-    max_frechet_mean_iter = 1000L,
-    mu                    = mu_true
-  )
-
-  res_cold <- load_kstitch_results(out_cold, type = "tpca")$all
-  res_warm <- load_kstitch_results(out_warm, type = "tpca")$all
+  res_cold <- load_kstitch_results(out_cold, type = "tpca")
+  res_warm <- load_kstitch_results(out_warm, type = "tpca")
 
   common_ids <- intersect(rownames(res_cold$TPCA_Embedding),
                           rownames(res_warm$TPCA_Embedding))
@@ -356,12 +303,9 @@ test_that("run_kendall_tpca accepts a warm-start mu and matches cold start outpu
   for (j in seq_len(ncol(res_cold$TPCA_Embedding))) {
     a <- res_cold$TPCA_Embedding[common_ids, j]
     b <- res_warm$TPCA_Embedding[common_ids, j]
-    expect_true(
-      min(mean(abs(a - b)), mean(abs(a + b))) < 1e-3,
-      label = paste0("PC", j, " cold vs warm start agree")
-    )
+    expect_true(min(mean(abs(a - b)), mean(abs(a + b))) < 1e-3,
+                label = paste0("PC", j, " cold vs warm start agree"))
   }
-
   expect_equal(res_cold$Info$variances, res_warm$Info$variances, tolerance = 1e-3)
 })
 
@@ -370,223 +314,20 @@ test_that("top PC is robust to use_parallel = TRUE vs FALSE", {
   skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
 
   result_serial <- run_tpca(
-    boundary_parquet_path = .boundary_path(),
-    output_dir            = NULL,
-    use_parallel          = FALSE,
-    x_col                 = "x",
-    y_col                 = "y",
-    cell_id_col           = "cell"
+    boundary_parquet_path = .boundary_path(), output_dir = NULL,
+    use_parallel = FALSE, x_col = "x", y_col = "y", cell_id_col = "cell"
   )
   result_parallel <- run_tpca(
-    boundary_parquet_path = .boundary_path(),
-    output_dir            = NULL,
-    use_parallel          = TRUE,
-    num_threads           = 2L,
-    x_col                 = "x",
-    y_col                 = "y",
-    cell_id_col           = "cell"
+    boundary_parquet_path = .boundary_path(), output_dir = NULL,
+    use_parallel = TRUE, num_threads = 2L,
+    x_col = "x", y_col = "y", cell_id_col = "cell"
   )
 
-  common_ids <- intersect(
-    rownames(result_serial$all$TPCA_Embedding),
-    rownames(result_parallel$all$TPCA_Embedding)
-  )
+  common_ids <- intersect(rownames(result_serial$TPCA_Embedding),
+                          rownames(result_parallel$TPCA_Embedding))
   expect_true(length(common_ids) > 0)
 
-  a <- result_serial$all$TPCA_Embedding[common_ids, 1L]
-  b <- result_parallel$all$TPCA_Embedding[common_ids, 1L]
+  a <- result_serial$TPCA_Embedding[common_ids, 1L]
+  b <- result_parallel$TPCA_Embedding[common_ids, 1L]
   expect_true(min(mean(abs(a - b)), mean(abs(a + b))) < 1e-3)
-})
-
-# ---- groupwise: structure ---------------------------------------------------
-
-test_that("run_tpca groupwise returns named list with one result per group", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-
-  result <- do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = withr::local_tempdir(),
-      cell_groups           = cell_groups
-    ),
-    .std_run_args
-  ))
-
-  expect_named(result, c("groupA", "groupB"), ignore.order = TRUE)
-  for (grp in c("groupA", "groupB")) {
-    expect_true(is.matrix(result[[grp]]$TPCA_Embedding))
-    expect_true(nrow(result[[grp]]$TPCA_Embedding) > 0)
-    expect_true(all(c("variances", "v_matrix", "frechet_mean") %in%
-                      names(result[[grp]]$Info)))
-    expect_equal(result[[grp]]$contour_type, "cell")
-    expect_equal(result[[grp]]$group, grp)
-    expect_true(result[[grp]]$is_groupwise)
-  }
-})
-
-test_that("run_tpca groupwise cells do not bleed across groups", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-
-  result <- do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = withr::local_tempdir(),
-      cell_groups           = cell_groups
-    ),
-    .std_run_args
-  ))
-
-  expect_true(length(intersect(
-    rownames(result$groupA$TPCA_Embedding),
-    rownames(result$groupB$TPCA_Embedding)
-  )) == 0L)
-  expect_true(all(rownames(result$groupA$TPCA_Embedding) %in% splits$groupA))
-  expect_true(all(rownames(result$groupB$TPCA_Embedding) %in% splits$groupB))
-})
-
-test_that("run_tpca groupwise writes to correctly named subdirectories", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-  out_dir <- withr::local_tempdir()
-
-  do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = out_dir,
-      cell_groups           = cell_groups
-    ),
-    .std_run_args
-  ))
-
-  for (grp in c("groupA", "groupB")) {
-    sub <- file.path(out_dir, paste0(grp, "_cell"))
-    expect_true(dir.exists(sub),                              label = paste(grp, "subdir exists"))
-    expect_true(file.exists(file.path(sub, "TPCA_Info.h5")), label = paste(grp, "TPCA_Info.h5"))
-    expect_true(file.exists(file.path(sub, "Shape_Metadata.csv.gz")),
-                label = paste(grp, "Shape_Metadata.csv.gz"))
-  }
-})
-
-test_that("run_tpca groupwise Frechet means are finite for both groups", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-
-  result <- do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = withr::local_tempdir(),
-      cell_groups           = cell_groups
-    ),
-    .std_run_args
-  ))
-
-  expect_true(all(is.finite(result$groupA$Info$frechet_mean)))
-  expect_true(all(is.finite(result$groupB$Info$frechet_mean)))
-})
-
-# ---- groupwise: return_results = FALSE --------------------------------------
-
-test_that("run_tpca groupwise return_results = FALSE returns paths for all groups", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-  out_dir <- withr::local_tempdir()
-
-  result <- do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = out_dir,
-      cell_groups           = cell_groups,
-      return_results        = FALSE
-    ),
-    .std_run_args
-  ))
-
-  expect_named(result, c("output_paths", "fields"))
-  expect_named(result$output_paths, c("groupA", "groupB"), ignore.order = TRUE)
-  expect_null(result$TPCA_Embedding)
-
-  for (grp in c("groupA", "groupB")) {
-    expect_true(file.exists(
-      file.path(result$output_paths[[grp]], "TPCA_Info.h5")
-    ))
-  }
-})
-
-test_that("load_kstitch_results loads groupwise deferred results correctly", {
-  skip_on_ci()
-  skip_if(!nzchar(.boundary_path()), "boundary fixture not found")
-
-  cell_ids <- .load_fixture_cell_ids()
-  skip_if(is.null(cell_ids) || length(cell_ids) < 4L, "not enough fixture cells")
-
-  splits      <- .split_cell_ids(cell_ids)
-  cell_groups <- c(
-    stats::setNames(rep("groupA", length(splits$groupA)), splits$groupA),
-    stats::setNames(rep("groupB", length(splits$groupB)), splits$groupB)
-  )
-  out_dir <- withr::local_tempdir()
-
-  deferred <- do.call(run_tpca, c(
-    list(
-      boundary_parquet_path = .boundary_path(),
-      output_dir            = out_dir,
-      cell_groups           = cell_groups,
-      return_results        = FALSE
-    ),
-    .std_run_args
-  ))
-
-  for (grp in c("groupA", "groupB")) {
-    loaded <- load_kstitch_results(deferred$output_paths[[grp]], type = "tpca")
-    expect_true(is.matrix(loaded$all$TPCA_Embedding))
-    expect_true(nrow(loaded$all$TPCA_Embedding) > 0)
-    expect_true(all(c("variances", "v_matrix", "frechet_mean") %in% names(loaded$all$Info)))
-  }
 })
