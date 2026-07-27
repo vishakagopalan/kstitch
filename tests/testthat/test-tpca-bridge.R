@@ -1,7 +1,7 @@
 make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
   emb <- matrix(rnorm(length(cell_names) * k), length(cell_names), k,
                 dimnames = list(cell_names, paste0("Shape_PC", seq_len(k))))
-  list("all"=list(
+  list(
     TPCA_Embedding = emb,
     Info = list(
       variances           = sort(runif(k, 0.5, 5), decreasing = TRUE),
@@ -10,11 +10,12 @@ make_fake_tpca_result <- function(cell_names, k = 6, contour_type = "cell") {
       pre_shape_embedding = NULL
     ),
     contour_type = contour_type,
-    output_dir   = tempdir())
+    output_dir   = tempdir()
   )
 }
 
-# ---- .load_kendall_tpca_output -------------------------------------------------------
+
+# ---- .load_kendall_tpca_output ----------------------------------------------
 
 test_that(".load_kendall_tpca_output errors clearly when TPCA_Info.h5 is absent", {
   tmp <- file.path(tempdir(), "empty_tpca_dir")
@@ -31,10 +32,10 @@ test_that(".load_kendall_tpca_output errors clearly when Shape_Metadata.csv.gz i
   file.remove(dummy)
 })
 
-# ---- store_tpca_results -----------------------------------------------------
 
-test_that("store_tpca_results writes DimReduc and misc for cell contours", {
+# ---- store_tpca_results — single group --------------------------------------
 
+test_that("store_tpca_results writes DimReduc and misc for single-group cell result", {
   set.seed(1)
   cells  <- paste0("cell_", 1:80)
   obj    <- make_seurat_stub(cells)
@@ -49,14 +50,12 @@ test_that("store_tpca_results writes DimReduc and misc for cell contours", {
                     names(obj2@misc$kstitch$tpca$cell)))
 })
 
-test_that("store_tpca_results warns when obj cells are missing from embedding", {
-
+test_that("store_tpca_results warns when obj cells are missing from single-group embedding", {
   set.seed(2)
   emb_cells <- paste0("cell_", 1:60)
   obj_cells <- paste0("cell_", 1:80)
-
-  obj    <- make_seurat_stub(obj_cells)
-  result <- make_fake_tpca_result(emb_cells, contour_type = "nucleus")
+  obj       <- make_seurat_stub(obj_cells)
+  result    <- make_fake_tpca_result(emb_cells, contour_type = "nucleus")
 
   expect_warning(
     obj2 <- store_tpca_results(obj, result),
@@ -65,10 +64,10 @@ test_that("store_tpca_results warns when obj cells are missing from embedding", 
   expect_equal(nrow(Seurat::Embeddings(obj2, "tpca_nucleus")), length(obj_cells))
 })
 
+
 # ---- get_tpca_results -------------------------------------------------------
 
 test_that("get_tpca_results retrieves the correct contour type", {
-
   obj <- make_seurat_stub(paste0("cell_", 1:10))
   obj@misc$kstitch <- list(
     tpca = list(
@@ -83,7 +82,6 @@ test_that("get_tpca_results retrieves the correct contour type", {
 })
 
 test_that("get_tpca_results errors informatively on missing results", {
-
   obj <- make_seurat_stub(paste0("cell_", 1:5))
   expect_error(get_tpca_results(obj), "No TPCA results found")
 
@@ -92,16 +90,28 @@ test_that("get_tpca_results errors informatively on missing results", {
                "contour_type 'nucleus' not found")
 })
 
-test_that("load_kstitch_results type=tpca returns result under 'all'", {
+test_that("get_tpca_results shows available groups when group is missing", {
+  obj <- make_seurat_stub(paste0("cell_", 1:5))
+  obj@misc$kstitch <- list(tpca = list(cell = list(TypeA = list(), TypeB = list())))
+  expect_error(
+    get_tpca_results(obj, "cell", group = "TypeC"),
+    "TypeA"
+  )
+})
 
+# ---- load_kstitch_results type=tpca -----------------------------------------
+
+test_that("load_kstitch_results type=tpca returns a flat result", {
   result <- load_kstitch_results(
     path = system.file(
       "extdata", "xenium_test", "tpca_fixtures", "Unit_Test_Keratinocytes_Nuclei",
       package = "kstitch"
-    ),  # use existing fixture in inst/extdata/xenium_test/tpca_fixtures/
+    ),
     type = "tpca"
   )
-  expect_named(result, "all")
-  expect_named(result$all, c("TPCA_Embedding", "Info", "Metadata",
-                             "contour_type", "group", "is_groupwise"))
+  # flat result — TPCA_Embedding at top level, no "all" wrapper
+  expect_true("TPCA_Embedding" %in% names(result))
+  expect_true("Info"           %in% names(result))
+  expect_true("Metadata"       %in% names(result))
+  expect_false("all" %in% names(result))
 })
