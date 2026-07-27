@@ -16,7 +16,8 @@ export_seurat_contours(
   num_threads = 8L,
   frechet_mean_tol = 1e-04,
   max_frechet_iter = 1000L,
-  return_results = TRUE
+  return_results = TRUE,
+  store_history = FALSE
 )
 }
 \arguments{
@@ -55,6 +56,12 @@ Defaults to all cells in \code{obj}.}
 loaded into R and returned. If \code{FALSE}, results are written to
 disk and only the output path is returned, with a message showing
 how to load them via \code{\link{load_kstitch_results}}.}
+
+\item{store_history}{Logical. If \code{TRUE}, the Fréchet mean iteration
+history is attached to the returned result as
+\code{attr(result, "frechet_history")}, a named list with
+\code{$grad_norm} (numeric vector) and \code{$mu_history} (array).
+Only meaningful when \code{return_results = TRUE}. Default \code{FALSE}.}
 }
 \value{
 When \code{return_results = TRUE}: a named list with element
