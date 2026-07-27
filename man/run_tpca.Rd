@@ -19,7 +19,8 @@ run_tpca(
   frechet_mean_tol = 1e-04,
   max_frechet_iter = 1000L,
   return_results = TRUE,
-  load_pre_shape = TRUE
+  load_pre_shape = TRUE,
+  store_history = FALSE
 )
 }
 \arguments{
@@ -62,6 +63,13 @@ disk and only the output paths are returned.}
 
 \item{load_pre_shape}{Logical. Whether to load the pre-shape embedding
 into \code{Info$pre_shape_embedding}. Default \code{TRUE}.}
+
+\item{store_history}{Logical. If \code{TRUE}, the Fréchet mean iteration
+history is attached to the returned list as
+\code{attr(result, "frechet_history")}, a named list with elements
+\code{$grad_norm} (numeric vector of per-iteration gradient norms) and
+\code{$mu_history} (array of mean shapes at each iteration). Only
+meaningful when \code{return_results = TRUE}. Default \code{FALSE}.}
 }
 \value{
 When \code{return_results = TRUE}: a flat list with

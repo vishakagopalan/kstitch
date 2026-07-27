@@ -353,3 +353,109 @@ plot_csp_boundary_montage <- function(group_result,
   attr(p, "coord_data") <- coord_df
   p
 }
+
+#' Plot Fréchet mean shape history
+#'
+#' Visualises the evolution of the Fréchet mean shape across iterations of the
+#' Kendall TPCA algorithm. Produces two side-by-side panels: a grid of
+#' evenly-spaced mean shape outlines (left) and an overlay of the same shapes
+#' with alpha scaled by iteration order (right).
+#'
+#' @param tpca_result A flat list returned by \code{\link{run_tpca}} with
+#'   \code{store_history = TRUE}. Must have a \code{"frechet_history"}
+#'   attribute containing \code{$mu_history} (a 3-D array,
+#'   iterations \eqn{\times} 2 \eqn{\times} landmarks).
+#' @param n Integer. Number of evenly-spaced iterations to display.
+#'   Default \code{9L}.
+#' @param colour Fill/outline colour for contours. Default \code{"steelblue"}.
+#' @param linewidth Line width passed to \code{geom_path}. Default \code{0.6}.
+#'
+#' @return A \code{ggplot} object (assembled with \code{ggpubr::ggarrange}).
+#' @seealso \code{\link{run_tpca}}, \code{\link{plot_frechet_convergence}}
+#' @export
+plot_mu_history <- function(tpca_result,
+                            n         = 9L,
+                            colour    = "steelblue",
+                            linewidth = 0.6) {
+
+  history <- attr(tpca_result, "frechet_history")
+  if (is.null(history))
+    stop(
+      "No frechet_history attribute found. ",
+      "Re-run run_tpca() with store_history = TRUE."
+    )
+
+  mu_history <- history$mu_history          # [iter, landmark, 2]
+  n_iter     <- dim(mu_history)[1]
+  n          <- min(as.integer(n), n_iter)
+
+  idx   <- unique(round(seq(1, n_iter, length.out = n)))
+  alpha <- seq(0.15, 1, length.out = length(idx))
+
+  # Build a long data frame for all selected iterations
+  iter_dfs <- Map(function(i, a) {
+    coords <- t(mu_history[i, , ])  # landmarks x 2
+
+    coords <- rbind(coords, coords[1L, ])
+
+    data.frame(
+      x         = coords[, 1],
+      y         = coords[, 2],
+      iteration = i,
+      iter_lab  = paste0("iter ", i),
+      alpha     = a
+    )
+  }, idx, alpha)
+
+  df <- do.call(rbind, iter_dfs)
+  df$iter_lab <- factor(df$iter_lab, levels = unique(df$iter_lab))
+
+  # ---- grid panel -----------------------------------------------------------
+  p_grid <- ggplot2::ggplot(
+    df,
+    ggplot2::aes(x, y, group = iteration)
+  ) +
+    ggplot2::geom_path(
+      colour = colour,
+      linewidth = linewidth
+    ) +
+    ggplot2::facet_wrap(
+      ~ iter_lab,
+      scales = "fixed"
+    ) +
+    ggplot2::coord_equal() +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      strip.text = ggplot2::element_text(size = 7),
+      panel.spacing = grid::unit(4, "pt"),
+      plot.title = ggplot2::element_text(
+        size = 9,
+        hjust = 0.5
+      )
+    ) +
+    ggplot2::labs(title = "Mean shape per iteration")
+
+  # ---- overlay panel --------------------------------------------------------
+  # geom_path doesn't vectorise alpha per-group cleanly, so draw layer by layer
+  p_overlay <- ggplot2::ggplot() +
+    ggplot2::coord_equal() +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(size = 9, hjust = 0.5)
+    ) +
+    ggplot2::labs(title = "Overlay (early \u2192 late)")
+
+  for (i in seq_along(idx)) {
+    sub <- df[df$iteration == idx[i], ]
+    p_overlay <- p_overlay +
+      ggplot2::geom_path(
+        data      = sub,
+        mapping   = ggplot2::aes(x, y),
+        colour    = colour,
+        alpha     = alpha[i],
+        linewidth = linewidth
+      )
+  }
+
+  ggpubr::ggarrange(p_grid, p_overlay, ncol = 2L, nrow = 1L)
+}

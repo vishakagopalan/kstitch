@@ -207,14 +207,15 @@ TPCA is restricted to cells that have exactly one nucleus.
 keratinocytes_cells_with_single_nucleus <-
   rownames(na.omit(Embeddings(precomputed_obj, "tpca_nucleus")))
 
-tpca_nucleus_out <- run_tpca(
+tpca_nucleus_out <- export_seurat_contours(
   melanoma_xenium_obj,
   seg_list     = melanoma_xenium_segmentation_info,
   output_dir   = "output/tpca_nucleus",
   contour_type = "nucleus",
   use_parallel = TRUE,
   num_threads  = 8,
-  cell_ids     = keratinocytes_cells_with_single_nucleus
+  cell_ids     = keratinocytes_cells_with_single_nucleus,
+  store_history = TRUE
 )
 keratinocyte_obj <- store_tpca_results(keratinocyte_obj, tpca_nucleus_out,
                                        reduction_key_prefix = "NucleusShapePC_")
@@ -453,14 +454,15 @@ shape specifically or by whole-cell shape.
 ## Step 2 — Export cell contours and run TPCA (eval=FALSE)
 
 ```{r run-tpca-cell, eval = FALSE}
-tpca_cell_out <- run_tpca(
+tpca_cell_out <- export_seurat_contours(
   melanoma_xenium_obj,
   seg_list     = melanoma_xenium_segmentation_info,
   output_dir   = "output/tpca_cell",
   contour_type = "cell",
   use_parallel = TRUE,
   num_threads  = 8,
-  cell_ids     = Cells(keratinocyte_obj)
+  cell_ids     = Cells(keratinocyte_obj),
+  store_history = TRUE
 )
 keratinocyte_obj <- store_tpca_results(keratinocyte_obj, tpca_cell_out,
                                        reduction_key_prefix = "CellShapePC_")
