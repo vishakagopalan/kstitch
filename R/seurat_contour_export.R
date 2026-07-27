@@ -18,14 +18,7 @@
 #'                     files remain accessible. An explicit path is created
 #'                     if absent and always left on disk.
 #' @param cell_ids     Optional character vector of cell IDs to analyse.
-#'                     Defaults to all cells in \code{obj}. Ignored when
-#'                     \code{cell_groups} is supplied.
-#' @param cell_groups  Optional named character vector mapping cell IDs to
-#'                     group labels (e.g. \code{c(cell1 = "typeA", cell2 =
-#'                     "typeB")}). When supplied, TPCA is run separately per
-#'                     group and a named list of per-group results is
-#'                     returned. Each group is written to
-#'                     \code{<output_dir>/<group>_<contour_type>/}.
+#'                     Defaults to all cells in \code{obj}.
 #' @param num_vertices Integer. Vertices to sample per contour (default 50).
 #' @param eta          Numeric. TPCA eta parameter (default 1).
 #' @param use_parallel Logical. Use parallel processing (default FALSE).
@@ -34,17 +27,16 @@
 #' @param max_frechet_iter Integer. Maximum Frechet mean iterations.
 #' @param return_results Logical. If \code{TRUE} (default), results are
 #'   loaded into R and returned. If \code{FALSE}, results are written to
-#'   disk and only the output paths are returned, with a message showing
+#'   disk and only the output path is returned, with a message showing
 #'   how to load them via \code{\link{load_kstitch_results}}.
 #'
-#' @return When \code{return_results = TRUE}: a named list of per-group
-#'   result lists (name \code{"all"} when \code{cell_groups} is
-#'   \code{NULL}), each with \code{TPCA_Embedding}, \code{Info},
+#' @return When \code{return_results = TRUE}: a named list with element
+#'   \code{"all"} containing \code{TPCA_Embedding}, \code{Info},
 #'   \code{Metadata}, \code{contour_type}, \code{group}, and
 #'   \code{is_groupwise}.
-#'   When \code{return_results = FALSE}: a list with \code{output_paths}
-#'   (named character vector) and \code{fields} describing the structure
-#'   returned by \code{load_kstitch_results(..., type = "tpca")}.
+#'   When \code{return_results = FALSE}: a list with \code{output_path}
+#'   (character scalar) giving the directory written by
+#'   \code{load_kstitch_results(..., type = "tpca")}.
 #' @seealso \code{\link{load_kstitch_results}}, \code{\link{store_tpca_results}}
 #' @export
 export_seurat_contours <- function(obj,
@@ -52,7 +44,6 @@ export_seurat_contours <- function(obj,
                                    contour_type      = c("cell", "nucleus"),
                                    output_dir        = NULL,
                                    cell_ids          = NULL,
-                                   cell_groups       = NULL,
                                    num_vertices      = 50L,
                                    eta               = 1,
                                    use_parallel      = FALSE,
@@ -66,19 +57,12 @@ export_seurat_contours <- function(obj,
   # ── 1. Extract and normalise the contour data frame ─────────────────────────
   df <- .extract_contour_df(seg_list, contour_type)
 
-  # ── 2. Resolve cell_ids ───────────────────────────────────────────────────────
-  if (is.null(cell_groups)) {
-    if (is.null(cell_ids))
-      cell_ids <- rownames(obj@meta.data)
-    df <- df[df$cell_id %in% cell_ids, , drop = FALSE]
-    if (nrow(df) == 0L)
-      stop("No contours remain after subsetting to cells in obj.")
-  } else {
-    all_group_cells <- names(cell_groups)
-    df <- df[df$cell_id %in% all_group_cells, , drop = FALSE]
-    if (nrow(df) == 0L)
-      stop("No contours remain after subsetting to cell_groups cell IDs.")
-  }
+  # ── 2. Resolve cell_ids ──────────────────────────────────────────────────────
+  if (is.null(cell_ids))
+    cell_ids <- rownames(obj@meta.data)
+  df <- df[df$cell_id %in% cell_ids, , drop = FALSE]
+  if (nrow(df) == 0L)
+    stop("No contours remain after subsetting to cells in obj.")
 
   # ── 3. Resolve output directory ──────────────────────────────────────────────
   if (!return_results && is.null(output_dir)) {
@@ -98,100 +82,51 @@ export_seurat_contours <- function(obj,
     "kendall_tpca", path = kendall_tpca_py_dir
   )
 
-  # ── 5. Shared TPCA runner ────────────────────────────────────────────────────
-  .run_one_group <- function(grp_df, grp_cell_ids, grp_dir, grp_label) {
-    dir.create(grp_dir, recursive = TRUE, showWarnings = FALSE)
+  # ── 5. Run TPCA ──────────────────────────────────────────────────────────────
+  dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
+  py_cell_ids <- reticulate::r_to_py(as.list(cell_ids))
 
-    py_cell_ids <- reticulate::r_to_py(as.list(grp_cell_ids))
+  message("Computing pre-shape embedding ...")
+  kendall_tpca$compute_pre_shape_embedding(
+    pre_shape_output_dir   = work_dir,
+    df                     = reticulate::r_to_py(df),
+    num_vertices_to_sample = as.integer(num_vertices),
+    cell_ids_to_analyze    = py_cell_ids,
+    x_vertex_col           = "x",
+    y_vertex_col           = "y",
+    cell_id_col            = "cell_id"
+  )
 
-    message(sprintf("Computing pre-shape embedding%s ...",
-                    if (grp_label == "all") "" else sprintf(" [%s]", grp_label)))
-    kendall_tpca$compute_pre_shape_embedding(
-      pre_shape_output_dir   = grp_dir,
-      df                     = reticulate::r_to_py(grp_df),
-      num_vertices_to_sample = as.integer(num_vertices),
-      cell_ids_to_analyze    = py_cell_ids,
-      x_vertex_col           = "x",
-      y_vertex_col           = "y",
-      cell_id_col            = "cell_id"
-    )
-
-    message(sprintf("Running TPCA%s ...",
-                    if (grp_label == "all") "" else sprintf(" [%s]", grp_label)))
-    kendall_tpca$run_kendall_tpca(
-      pre_shape_input_dir   = grp_dir,
-      output_dir            = grp_dir,
-      cell_ids_to_analyze   = py_cell_ids,
-      cell_id_col           = "cell_id",
-      max_frechet_mean_iter = as.integer(max_frechet_iter),
-      eta                   = eta,
-      use_parallel          = use_parallel,
-      num_threads           = as.integer(num_threads),
-      frechet_mean_tol      = frechet_mean_tol
-    )
-
-    if (return_results) {
-      message(sprintf("Reading TPCA results%s ...",
-                      if (grp_label == "all") "" else sprintf(" [%s]", grp_label)))
-      res              <- .load_kendall_tpca_output(grp_dir)
-      res$contour_type <- contour_type
-      res$output_dir   <- grp_dir
-      res$group        <- grp_label
-      res$is_groupwise <- grp_label != "all"
-      res
-    } else {
-      NULL
-    }
-  }
-
-  # ── 6. Groupwise path ────────────────────────────────────────────────────────
-  if (!is.null(cell_groups)) {
-    groups       <- unique(cell_groups)
-    output_paths <- stats::setNames(
-      file.path(work_dir, paste0(groups, "_", contour_type)),
-      groups
-    )
-
-    results <- lapply(groups, function(grp) {
-      grp_cells <- names(cell_groups)[cell_groups == grp]
-      grp_df    <- df[df$cell_id %in% grp_cells, , drop = FALSE]
-      .run_one_group(grp_df, grp_cells, output_paths[[grp]], grp)
-    })
-
-    if (!return_results) {
-      .emit_tpca_deferred_msg(output_paths)
-      return(list(
-        output_paths = output_paths,
-        fields       = list(
-          TPCA_Embedding = "matrix, cells x shape PCs",
-          Info           = "list: variances, v_matrix, frechet_mean, pre_shape_embedding",
-          Metadata       = "data frame: per-cell shape metadata including Frobenius norm (scale)",
-          contour_type   = "character: 'cell' or 'nucleus'"
-        )
-      ))
-    }
-
-    return(stats::setNames(results, groups))
-  }
-
-  # ── 7. Single-group path ──────────────────────────────────────────────────────
-  result <- .run_one_group(df, cell_ids, work_dir, "all")
+  message("Running TPCA ...")
+  kendall_tpca$run_kendall_tpca(
+    pre_shape_input_dir   = work_dir,
+    output_dir            = work_dir,
+    cell_ids_to_analyze   = py_cell_ids,
+    cell_id_col           = "cell_id",
+    max_frechet_mean_iter = as.integer(max_frechet_iter),
+    eta                   = eta,
+    use_parallel          = use_parallel,
+    num_threads           = as.integer(num_threads),
+    frechet_mean_tol      = frechet_mean_tol
+  )
 
   if (!return_results) {
-    output_paths <- stats::setNames(work_dir, "all")
-    .emit_tpca_deferred_msg(output_paths)
-    return(list(
-      output_paths = output_paths,
-      fields       = list(
-        TPCA_Embedding = "matrix, cells x shape PCs",
-        Info           = "list: variances, v_matrix, frechet_mean, pre_shape_embedding",
-        Metadata       = "data frame: per-cell shape metadata including Frobenius norm (scale)",
-        contour_type   = "character: 'cell' or 'nucleus'"
-      )
+    message("Result not loaded into memory (return_results = FALSE).")
+    message(sprintf("  TPCA output written to: %s", work_dir))
+    message(sprintf(
+      "  Load with load_kstitch_results(\"%s\", type = \"tpca\")", work_dir
     ))
+    return(list(output_path = work_dir))
   }
 
-  result$output_dir <- if (resolved$is_temp) NULL else work_dir
+  # ── 6. Load and return results ───────────────────────────────────────────────
+  message("Reading TPCA results ...")
+  result              <- .load_kendall_tpca_output(work_dir)
+  result$contour_type <- contour_type
+  result$output_dir   <- if (resolved$is_temp) NULL else work_dir
+  result$group        <- "all"
+  result$is_groupwise <- FALSE
+
   list(all = result)
 }
 
