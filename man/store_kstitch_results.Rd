@@ -6,7 +6,7 @@
 \usage{
 store_kstitch_results(
   obj,
-  results,
+  result,
   reduction_name = "kstitch",
   reduction_key_csp = "CSP_",
   reduction_key_cep = "CEP_"
@@ -15,19 +15,18 @@ store_kstitch_results(
 \arguments{
 \item{obj}{A Seurat v5 object.}
 
-\item{results}{Named list as returned by \code{\link{link_shape_and_factors}}.}
+\item{result}{List as returned by \code{\link{link_shape_and_factors}}.}
 
 \item{reduction_name}{Character. Base name used to construct the
 \code{DimReduc} slot names (\code{<reduction_name>_csp} and
 \code{<reduction_name>_cep}) and the \code{obj@misc$kstitch} key.
-Must be unique across calls if storing multiple CCA results.
-Default \code{"kstitch"}.}
+Must be unique across calls. Default \code{"kstitch"}.}
 
-\item{reduction_key_csp}{Character. Key prefix for the CSP \code{DimReduc}.
-Default \code{"CSP_"}.}
+\item{reduction_key_csp}{Character. Key prefix for the CSP
+\code{DimReduc}. Default \code{"CSP_"}.}
 
-\item{reduction_key_cep}{Character. Key prefix for the CEP \code{DimReduc}.
-Default \code{"CEP_"}.}
+\item{reduction_key_cep}{Character. Key prefix for the CEP
+\code{DimReduc}. Default \code{"CEP_"}.}
 }
 \value{
 The Seurat object with \code{obj[["<reduction_name>_csp"]]},
@@ -35,15 +34,21 @@ The Seurat object with \code{obj[["<reduction_name>_csp"]]},
 \code{obj@misc$kstitch[[reduction_name]]} populated.
 }
 \description{
-Takes the named list returned by \code{\link{link_shape_and_factors}} and
-writes results into the Seurat object in two places:
+Takes the list returned by \code{\link{link_shape_and_factors}} and writes
+results into the Seurat object in two places:
 \enumerate{
-\item CSP and CEP scores are assembled across groups into object-spanning
-\code{DimReduc} slots named \code{<reduction_name>_csp} and
-\code{<reduction_name>_cep}.
-\item All other per-group fit information is written to
-\code{obj@misc$kstitch[[reduction_name]][[group_level]]}.
+\item CSP and CEP scores are written into object-spanning \code{DimReduc}
+slots named \code{<reduction_name>_csp} and \code{<reduction_name>_cep}.
+Cells in the object that were not present in the CCA (e.g. cells
+excluded due to missing shape polygons) receive \code{NA} scores.
+\item All other fit information is written to
+\code{obj@misc$kstitch[[reduction_name]]}.
 }
+}
+\details{
+To store multiple CCA results (e.g. cell vs nucleus, regressed vs
+unregressed, or different cell types), call this function once per result
+with a distinct \code{reduction_name}.
 }
 \seealso{
 \code{\link{link_shape_and_factors}}, \code{\link{get_kstitch_results}}

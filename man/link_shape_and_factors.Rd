@@ -8,7 +8,6 @@ link_shape_and_factors(
   obj,
   expr_mat,
   shape_mat,
-  group.by = NULL,
   min_cells = 100,
   scale = TRUE,
   test_significance = FALSE,
@@ -20,8 +19,8 @@ link_shape_and_factors(
 )
 }
 \arguments{
-\item{obj}{A Seurat v5 object. Used only for \code{@meta.data} (group
-resolution and cell-name intersection); never mutated.}
+\item{obj}{A Seurat v5 object. Used only to validate that matrix row names
+match known cell names; never mutated.}
 
 \item{expr_mat}{Numeric matrix (cells x features). Expression-side input,
 e.g. NMF factor scores. Row names must match Seurat cell names.}
@@ -29,11 +28,8 @@ e.g. NMF factor scores. Row names must match Seurat cell names.}
 \item{shape_mat}{Numeric matrix (cells x shape PCs). Shape-side input from
 TPCA. Row names must match Seurat cell names.}
 
-\item{group.by}{Character or NULL. Column in \code{obj@meta.data} defining
-groups. When NULL, all cells are treated as a single group returned under
-the key \code{"all"}.}
-
-\item{min_cells}{Integer. Groups with fewer cells are skipped (default 100).}
+\item{min_cells}{Integer. If fewer cells remain after intersecting the three
+cell sets, the function errors (default 100).}
 
 \item{scale}{Logical. Whether to z-score \code{shape_mat} and
 \code{expr_mat} before CCA (default TRUE).}
@@ -45,36 +41,31 @@ permutation p-values via \code{cca_pvalues()} (default FALSE).}
 
 \item{perm_seed}{Integer or NULL. RNG seed for permutation testing.}
 
-\item{verbose}{Logical. Whether to emit per-group progress messages
-(default FALSE).}
+\item{verbose}{Logical. Whether to emit progress messages (default FALSE).}
 
-\item{return_results}{Logical. When TRUE (default) results are returned as a
-named list. When FALSE, each group's result is serialized to
-\code{<output_dir>/<group>.rds} and a named list of file paths is returned
-instead.}
+\item{return_results}{Logical. When TRUE (default) the result list is
+returned. When FALSE, the result is serialized to
+\code{<output_dir>/all.rds} and the file path is returned.}
 
 \item{output_dir}{Character or NULL. Directory for serialized output when
-\code{return_results = FALSE}. When NULL a temporary directory is created
-automatically and is \emph{not} cleaned up on exit. Ignored when
-\code{return_results = TRUE}.}
+\code{return_results = FALSE}. When NULL a temporary directory is used
+and not cleaned up. Ignored when \code{return_results = TRUE}.}
 }
 \value{
-When \code{return_results = TRUE}: a named list of per-group result
-lists. Each entry contains \code{CC_Corr_Coefs}, \code{Shape_Corr_With_CSP},
-\code{Exp_Corr_With_CEP}, \code{CSP_Scores}, \code{CEP_Scores},
-\code{CSP_Vectors}, \code{CEP_Vectors}, \code{Misc_CCA},
-\code{Anchor_Features}, \code{group}, and \code{is_groupwise}. If
-\code{test_significance = TRUE}, also \code{P_Value_Info}. Single-group
-results are returned under the key \code{"all"}.
+When \code{return_results = TRUE}: a list containing
+\code{CC_Corr_Coefs}, \code{Shape_Corr_With_CSP}, \code{Exp_Corr_With_CEP},
+\code{CSP_Scores}, \code{CEP_Scores}, \code{CSP_Vectors},
+\code{CEP_Vectors}, \code{Misc_CCA}, and \code{Anchor_Features}. If
+\code{test_significance = TRUE}, also \code{P_Value_Info}.
 
 When \code{return_results = FALSE}: a list with element
-\code{output_paths}, a named character vector mapping group names to RDS
-file paths.
+\code{output_path} (character scalar, path to the serialized RDS).
 }
 \description{
-Runs CCA between a shape PC matrix and an expression factor matrix,
-optionally per cell group. Results are returned as a named list of per-group
-CCA outputs, or serialized to disk when \code{return_results = FALSE}.
+Runs CCA between a shape PC matrix and an expression factor matrix.
+Operates on a single pre-filtered cell set. For multi-group workflows,
+call this function once per group in an external loop, passing pre-subsetted
+matrices each time.
 }
 \seealso{
 \code{\link{store_kstitch_results}}, \code{\link{load_kstitch_results}}

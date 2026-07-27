@@ -2,26 +2,23 @@
 % Please edit documentation in R/seurat_storage.r
 \name{get_kstitch_results}
 \alias{get_kstitch_results}
-\title{Retrieve kstitch per-group fit results from a Seurat object}
+\title{Retrieve kstitch CCA results from a Seurat object}
 \usage{
-get_kstitch_results(obj, reduction_name = "kstitch", group = NULL)
+get_kstitch_results(obj, reduction_name = "kstitch")
 }
 \arguments{
-\item{obj}{A Seurat v5 object with kstitch results stored via
+\item{obj}{A Seurat v5 object with results stored via
 \code{\link{store_kstitch_results}}.}
 
 \item{reduction_name}{Character. The reduction name passed to
-\code{\link{store_kstitch_results}}. Default \code{"kstitch"}.}
-
-\item{group}{Character. The group level to retrieve. If \code{NULL}
-(default), returns the full \code{obj@misc$kstitch[[reduction_name]]} list.}
+\code{\link{store_kstitch_results}}. Default \code{"kstitch"}.
+If not found, available reduction names are shown.}
 }
 \value{
-A list of fit objects for the requested group, or all groups for the
-requested reduction if \code{group = NULL}.
+The CCA result list for the requested reduction.
 }
 \description{
-Convenience accessor for \code{obj@misc$kstitch[[reduction_name]][[group]]}.
+Convenience accessor for \code{obj@misc$kstitch[[reduction_name]]}.
 }
 \seealso{
 \code{\link{store_kstitch_results}}

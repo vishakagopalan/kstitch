@@ -21,17 +21,13 @@ For \code{type = "nmf"} or \code{type = "cca"}: path to an RDS file.}
 load the pre-shape embedding from \code{Pre_Shape_Space_Embedding.h5}
 into \code{Info$pre_shape_embedding}. Default \code{TRUE}. Set to
 \code{FALSE} to skip loading this (potentially large) array when it is
-not needed — e.g. before storing results in a Seurat object.}
+not needed.}
 }
 \value{
-For \code{"tpca"}: a list with \code{TPCA_Embedding},
+For \code{"tpca"}: a flat list with \code{TPCA_Embedding},
 \code{Info} (variances, v_matrix, frechet_mean, pre_shape_embedding),
 \code{Metadata}, and \code{contour_type}.
-For \code{"nmf"}: a list with \code{H}, \code{W}, and \code{stability}.
-For \code{"cca"}: a list with \code{CSP_Scores}, \code{CEP_Scores},
-\code{CC_Corr_Coefs}, \code{corr.shape.with.csp},
-\code{corr.shape.with.cep}, \code{corr.exp.with.csp}, and
-\code{corr.exp.with.cep}.
+For \code{"nmf"} or \code{"cca"}: the deserialised RDS list.
 }
 \description{
 Unified loader for results previously saved by \code{\link{run_tpca}},

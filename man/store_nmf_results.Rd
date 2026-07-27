@@ -2,11 +2,12 @@
 % Please edit documentation in R/store_nmf_results.R
 \name{store_nmf_results}
 \alias{store_nmf_results}
-\title{Store per-group NMF results in a Seurat object}
+\title{Store NMF results in a Seurat object}
 \usage{
 store_nmf_results(
   obj,
-  nmf_results,
+  nmf_result,
+  reduction_suffix = "all",
   reduction_prefix = "nmf_",
   reduction_key_prefix = "NMF"
 )
@@ -14,46 +15,42 @@ store_nmf_results(
 \arguments{
 \item{obj}{A Seurat v5 object.}
 
-\item{nmf_results}{Named list as returned by \code{\link{compute_nmf}}.}
+\item{nmf_result}{List as returned by \code{\link{compute_nmf}}.}
 
-\item{reduction_prefix}{Character. Prefix for each group's reduction name.
-Default \code{"nmf_"}, giving \code{obj[["nmf_<group>"]]}.}
+\item{reduction_suffix}{Character. Appended to \code{reduction_prefix} to
+form the full reduction name, e.g. \code{"Keratinocytes"} →
+\code{"nmf_Keratinocytes"}. Default \code{"all"}.}
+
+\item{reduction_prefix}{Character. Prefix for the reduction name.
+Default \code{"nmf_"}.}
 
 \item{reduction_key_prefix}{Character. Key prefix passed to
-\code{Seurat::CreateDimReducObject()} for each reduction (Seurat requires
-reduction keys to be unique across the object, and to consist of
-alphanumeric characters with a single trailing underscore -- Seurat
-silently strips any other underscores). Default \code{"NMF"}; the group
-name is appended (with non-alphanumeric characters removed) to keep keys
-unique across groups, e.g. \code{"NMFTypeA_"}, \code{"NMFTypeB_"}, giving
-feature names \code{"NMFTypeA_1"}, \code{"NMFTypeA_2"}, ... Use
-\code{Seurat::Key(obj[["nmf_<group>"]])} to confirm the exact key
-actually assigned, since Seurat may adjust it further.}
+\code{Seurat::CreateDimReducObject()}. The suffix (with non-alphanumeric
+characters removed) is appended to keep keys unique across groups, e.g.
+\code{"NMFKeratinocytes_"}. Default \code{"NMF"}.}
 }
 \value{
-The Seurat object with one \code{obj[["nmf_<group>"]]} reduction
-per non-empty group.
+The Seurat object with one new \code{DimReduc} added.
 }
 \description{
-Takes the named list returned by \code{\link{compute_nmf}} (one entry per
-group, or a single \code{"all"} entry when \code{group.by = NULL}) and
-writes each group's fit into the Seurat object as its own \code{DimReduc}
-slot, named \code{obj[["nmf_<group>"]]}. Feature loadings are stored in the
-reduction's \code{@feature.loadings}; fit metadata (\code{Fit_Error},
-\code{Fit_Summary}, \code{Factor_Gene_List}) is stored in the reduction's
-\code{@misc}. Mirrors \code{\link{store_tpca_results}}'s pattern for the
-TPCA bridge.
+Takes the list returned by \code{\link{compute_nmf}} and writes the fit into
+the Seurat object as a \code{DimReduc} slot named
+\code{obj[["<reduction_prefix><reduction_suffix>"]]}. Feature loadings are
+stored in the reduction's \code{@feature.loadings}; fit metadata
+(\code{Fit_Error}, \code{Fit_Summary}, \code{Factor_Gene_List}) is stored
+in the reduction's \code{@misc}.
 }
 \details{
-Cells not present in a given group's \code{NMF_Matrix} receive \code{NA}
-embeddings in that group's reduction (a cell only ever belongs to one
-group's reduction under normal use, so this mainly guards against partial
-or mismatched inputs).
+For multi-group workflows, call this function once per group in an external
+loop, passing a distinct \code{reduction_suffix} each time (e.g. the cell
+type name), so each group gets its own \code{DimReduc}.
 
-Groups whose fit was empty (e.g. skipped for having too few cells --
-\code{NMF_Matrix} is \code{NULL}) are skipped with a message; no
-\code{DimReduc} is created for them.
+Cells in \code{obj} not present in the NMF result receive \code{NA}
+embeddings — this guards against partial or mismatched inputs.
+
+If \code{NMF_Matrix} is \code{NULL} (e.g. the group was skipped for having
+too few cells), a message is emitted and no \code{DimReduc} is created.
 }
 \seealso{
-\code{\link{compute_nmf}}, \code{\link{store_tpca_results}}
+\code{\link{compute_nmf}}, \code{\link{get_nmf_results}}
 }

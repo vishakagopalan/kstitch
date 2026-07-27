@@ -2,12 +2,11 @@
 % Please edit documentation in R/compute_nmf.r
 \name{compute_nmf}
 \alias{compute_nmf}
-\title{Run NMF on a Seurat object, optionally per cell group}
+\title{Run NMF on a Seurat object}
 \usage{
 compute_nmf(
   obj,
   assay_name,
-  group.by = NULL,
   features = NULL,
   num_top_genes_per_factor = 100,
   batch_var = NULL,
@@ -36,23 +35,18 @@ compute_nmf(
 
 \item{assay_name}{Character. Name of the assay to use.}
 
-\item{group.by}{Character or NULL. Column in \code{obj@meta.data} defining
-groups. When NULL, all cells are treated as a single group returned under
-the key \code{"all"}.}
-
 \item{features}{NULL (default), a character vector, or a named list of
 character vectors. Controls which genes are used for NMF, bypassing
-internal gene filtering when supplied.
+internal gene filtering when supplied. When a named list is passed, names
+must match the single group label \code{"all"} or be omitted (plain
+character vector preferred for single-group use).
 \itemize{
 \item \code{NULL}: internal gene filtering via \code{gene_pct_threshold}
-and \code{selectGenes_params} is applied (existing behaviour).
-\item Character vector: the same gene set is used for all groups.
-\item Named list: one character vector per group; names must exactly
-match the group levels present in \code{obj@meta.data[[group.by]]}.
-Errors if any group is missing or extra names are present.
+and \code{selectGenes_params} is applied.
+\item Character vector: this gene set is used directly.
 }
-In all non-NULL cases, genes absent from the object are silently dropped
-and a warning is emitted if fewer than 100 genes remain for any group.}
+Genes absent from the object are silently dropped. A warning is emitted
+if fewer than 100 genes remain.}
 
 \item{num_top_genes_per_factor}{Integer. Number of top genes to record per
 NMF factor in the \code{Factor_Gene_List} output.}
@@ -63,17 +57,17 @@ as a batch variable for iNMF integration.}
 \item{count_matrix_layer}{Character. Layer in the assay containing raw
 counts (default \code{"counts"}).}
 
-\item{min_cells}{Integer. Groups with fewer cells are skipped.}
+\item{min_cells}{Integer. If the object has fewer cells, an empty result is
+returned.}
 
-\item{gene_pct_threshold}{Numeric in \code{[0, 1]}. Minimum fraction of cells
-expressing a gene for it to be retained. Ignored when \code{features} is
-supplied.}
+\item{gene_pct_threshold}{Numeric in \code{[0, 1]}. Minimum fraction of
+cells expressing a gene for it to be retained. Applied even when
+\code{features} is supplied.}
 
 \item{use_normalized_factor_scores}{Logical. Whether to use quantile-
 normalised factor scores (default TRUE).}
 
-\item{default_num_factors}{Integer. Number of NMF factors when automatic
-selection is not triggered.}
+\item{default_num_factors}{Integer. Number of NMF factors.}
 
 \item{nCores}{Integer. Number of cores passed to rliger.}
 
@@ -81,8 +75,8 @@ selection is not triggered.}
 functions. \code{selectGenes_params} is ignored when \code{features} is
 supplied.}
 
-\item{integration_method}{Character. One of \code{"consensus"} (default) or
-\code{"online"}.}
+\item{integration_method}{Character. One of \code{"consensus"} or
+\code{"online"} (default).}
 
 \item{stability_n_runs}{Integer. Number of NMF runs for Kotliar stability
 scoring.}
@@ -91,31 +85,27 @@ scoring.}
 
 \item{verbose}{Logical. Whether to emit progress messages (default TRUE).}
 
-\item{return_results}{Logical. When TRUE (default) results are loaded into
-memory and returned as a named list. When FALSE, each group's result is
-serialized to \code{<output_dir>/<group>.rds} and a named list of file
-paths is returned instead.}
+\item{return_results}{Logical. When TRUE (default) the result list is
+returned. When FALSE, the result is serialized to
+\code{<output_dir>/all.rds} and the file path is returned.}
 
 \item{output_dir}{Character or NULL. Directory for serialized output when
-\code{return_results = FALSE}. When NULL a temporary directory is created
-automatically and is \emph{not} cleaned up on exit (so the files remain
-accessible). Ignored when \code{return_results = TRUE}.}
+\code{return_results = FALSE}. When NULL a temporary directory is used
+and not cleaned up. Ignored when \code{return_results = TRUE}.}
 }
 \value{
-When \code{return_results = TRUE}: a named list of per-group fit
-lists. Each entry carries \code{group} (character) and
-\code{is_groupwise} (logical) fields in addition to the NMF outputs from
-\code{.run_nmf_one_group()}. Single-group results are returned under the
-key \code{"all"}.
+When \code{return_results = TRUE}: a list with
+\code{Factor_Gene_List}, \code{NMF_Matrix}, \code{NMF_Loading},
+\code{Fit_Error}, and \code{Fit_Summary}.
 
 When \code{return_results = FALSE}: a list with element
-\code{output_paths}, a named character vector mapping group names to RDS
-file paths.
+\code{output_path} (character scalar, path to the serialized RDS).
 }
 \description{
 Wraps \code{rliger} consensus or online iNMF with Kotliar stability scoring.
-Results are returned as a named list of per-group fit objects, or serialized
-to disk when \code{return_results = FALSE}.
+Operates on all cells in \code{obj}. For multi-group workflows, call this
+function once per group in an external loop, passing a pre-subsetted object
+each time.
 }
 \seealso{
 \code{\link{store_nmf_results}}, \code{\link{load_kstitch_results}}
