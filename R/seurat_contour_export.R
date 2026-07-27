@@ -29,6 +29,11 @@
 #'   loaded into R and returned. If \code{FALSE}, results are written to
 #'   disk and only the output path is returned, with a message showing
 #'   how to load them via \code{\link{load_kstitch_results}}.
+#' @param store_history Logical. If \code{TRUE}, the Fréchet mean iteration
+#'   history is attached to the returned result as
+#'   \code{attr(result, "frechet_history")}, a named list with
+#'   \code{$grad_norm} (numeric vector) and \code{$mu_history} (array).
+#'   Only meaningful when \code{return_results = TRUE}. Default \code{FALSE}.
 #'
 #' @return When \code{return_results = TRUE}: a named list with element
 #'   \code{"all"} containing \code{TPCA_Embedding}, \code{Info},
@@ -50,7 +55,8 @@ export_seurat_contours <- function(obj,
                                    num_threads       = 8L,
                                    frechet_mean_tol  = 1e-4,
                                    max_frechet_iter  = 1000L,
-                                   return_results    = TRUE) {
+                                   return_results    = TRUE,
+                                   store_history = FALSE) {
 
   contour_type <- match.arg(contour_type)
 
@@ -98,7 +104,7 @@ export_seurat_contours <- function(obj,
   )
 
   message("Running TPCA ...")
-  kendall_tpca$run_kendall_tpca(
+  py_result <- kendall_tpca$run_kendall_tpca(
     pre_shape_input_dir   = work_dir,
     output_dir            = work_dir,
     cell_ids_to_analyze   = py_cell_ids,
@@ -107,7 +113,8 @@ export_seurat_contours <- function(obj,
     eta                   = eta,
     use_parallel          = use_parallel,
     num_threads           = as.integer(num_threads),
-    frechet_mean_tol      = frechet_mean_tol
+    frechet_mean_tol      = frechet_mean_tol,
+    store_history         = store_history
   )
 
   if (!return_results) {
@@ -127,7 +134,13 @@ export_seurat_contours <- function(obj,
   result$group        <- "all"
   result$is_groupwise <- FALSE
 
-  list(all = result)
+  if (store_history)                            # <-- attach
+    attr(result, "frechet_history") <- list(
+      grad_norm  = as.numeric(py_result[[3]]),
+      mu_history = py_result[[2]]
+    )
+
+  result
 }
 
 

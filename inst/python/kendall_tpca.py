@@ -274,85 +274,161 @@ def frechet(X, eta=0.001, use_parallel=False, num_chunks=4, max_iter=100,
     num_chunks : int
         Number of parallel workers.
     max_iter : int
+        Maximum number of gradient updates.
     tol : float
-        Convergence tolerance on gradient norm of the update step.
+        Convergence tolerance on the gradient norm.
     store_history : bool
-        If True, also return the mean history and convergence trace.
+        If True, return the initial mean, all subsequent mean estimates,
+        and the gradient norm from each update.
     mu : np.ndarray, shape (2, L), optional
-        Initial estimate of the Frechet mean. If None (default), the first
-        shape in X is used.
+        Initial estimate of the Frechet mean. If None, the first shape
+        in X is used.
 
     Returns
     -------
     np.ndarray or list
-        Frechet mean (shape (2, L)), or [mean, mean_history, history] when
-        ``store_history=True``.
+        If store_history=False:
+            Frechet mean, shape (2, L).
+
+        If store_history=True:
+            [mean, mean_history, grad_norm_history]
+
+            mean_history has shape (n_updates + 1, 2, L), where:
+                mean_history[0] is the initial estimate
+                mean_history[1] is the estimate after update 1
+                ...
     """
-    mu = X[0] if mu is None else mu.copy()
-    history = []
+    if X.ndim != 3 or X.shape[1] != 2:
+        raise ValueError(
+            "X must have shape (n_shapes, 2, n_landmarks); "
+            f"received {X.shape}."
+        )
+
+    if X.shape[0] == 0:
+        raise ValueError("X must contain at least one shape.")
+
+    if max_iter < 1:
+        raise ValueError("max_iter must be at least 1.")
+
+    if num_chunks < 1:
+        raise ValueError("num_chunks must be at least 1.")
+
+    mu = X[0].copy() if mu is None else np.asarray(mu, dtype=float).copy()
+
+    if mu.shape != X.shape[1:]:
+        raise ValueError(
+            f"mu must have shape {X.shape[1:]}; received {mu.shape}."
+        )
+
+    grad_norm_history = []
+
     if store_history:
-        mu_history = np.zeros((max_iter, X.shape[1], X.shape[2]))
+        # One extra entry for the initial estimate.
+        mu_history = np.zeros(
+            (max_iter + 1, X.shape[1], X.shape[2]),
+            dtype=float
+        )
+        mu_history[0] = mu
 
     start_time = time.time()
+
     logger.info(
-        "Frechet mean: starting on %d shapes (eta=%.4g, tol=%.4g, max_iter=%d, parallel=%s)",
-        X.shape[0], eta, tol, max_iter, use_parallel
+        "Frechet mean: starting on %d shapes "
+        "(eta=%.4g, tol=%.4g, max_iter=%d, parallel=%s)",
+        X.shape[0],
+        eta,
+        tol,
+        max_iter,
+        use_parallel
     )
+
+    n_updates = 0
 
     for i in range(max_iter):
         if use_parallel:
-            chunk_size = int(X.shape[0] / num_chunks)
             idxes = np.arange(X.shape[0])
-            chunks = [
-                idxes[c * chunk_size:(c + 1) * chunk_size]
-                for c in range((len(idxes) + chunk_size - 1) // chunk_size)
-            ]
-            with Pool(num_chunks) as pool:
-                dmu_list = pool.starmap(
-                    log_map_values, zip(repeat(X), repeat(mu), chunks)
-                )
-            dmu = sum(
-                v for batch in dmu_list for v in batch
-            ) / X.shape[0]
-        else:
-            dmu = sum(log(mu, X[j]) for j in range(X.shape[0])) / X.shape[0]
 
-        prev_mu = mu
-        mu = exp(mu, dmu * eta)
+            # Prevent zero-sized chunks when num_chunks > number of shapes.
+            n_workers = min(num_chunks, X.shape[0])
+            chunks = [
+                chunk
+                for chunk in np.array_split(idxes, n_workers)
+                if len(chunk) > 0
+            ]
+
+            with Pool(n_workers) as pool:
+                dmu_batches = pool.starmap(
+                    log_map_values,
+                    zip(repeat(X), repeat(mu), chunks)
+                )
+
+            dmu = np.concatenate(dmu_batches, axis=0).mean(axis=0)
+
+        else:
+            dmu = np.mean(
+                [log(mu, X[j]) for j in range(X.shape[0])],
+                axis=0
+            )
+
+        grad_norm = float(np.linalg.norm(dmu))
+        grad_norm_history.append(grad_norm)
+
+        prev_mu = mu.copy()
+        mu = exp_safe(mu, dmu * eta)
+
+        n_updates += 1
 
         if store_history:
-            mu_history[i] = mu
-
-        grad_norm = np.linalg.norm(dmu)
+            mu_history[n_updates] = mu
 
         change = theta_value(mu, prev_mu)
-        logger.debug("Frechet iteration %d: grad_norm = %.6f", i, grad_norm)
 
-        history.append(change)
+        logger.debug(
+            "Frechet iteration %d: grad_norm=%.6g, change=%.6g",
+            i + 1,
+            grad_norm,
+            change
+        )
 
-        if i % 10 == 0 and i > 0:
+        if (i + 1) % 10 == 0:
             elapsed = time.time() - start_time
             logger.info(
-                "Frechet mean: iteration %d, grad_norm = %.6f (elapsed %.1fs)",
-                i, grad_norm, elapsed
+                "Frechet mean: iteration %d, grad_norm=%.6f "
+                "(elapsed %.1fs)",
+                i + 1,
+                grad_norm,
+                elapsed
             )
 
-        if grad_norm < tol and i > 0:
+        if grad_norm < tol:
             elapsed = time.time() - start_time
             logger.info(
-                "Frechet mean: converged at iteration %d (grad_norm = %.6f < tol = %.4g, elapsed %.1fs)",
-                i, grad_norm, tol, elapsed
+                "Frechet mean: converged after %d updates "
+                "(grad_norm=%.6f < tol=%.4g, elapsed %.1fs)",
+                n_updates,
+                grad_norm,
+                tol,
+                elapsed
             )
             break
+
     else:
         elapsed = time.time() - start_time
         logger.info(
-            "Frechet mean: reached max_iter (%d) without converging (final grad_norm = %.6f, elapsed %.1fs)",
-            max_iter, grad_norm, elapsed
+            "Frechet mean: reached max_iter (%d) without converging "
+            "(final grad_norm=%.6f, elapsed %.1fs)",
+            max_iter,
+            grad_norm_history[-1],
+            elapsed
         )
 
     if store_history:
-        return [mu, mu_history[:i], history]
+        return [
+            mu,
+            mu_history[:n_updates + 1],
+            grad_norm_history
+        ]
+
     return mu
 # ── Reconstruction helpers ─────────────────────────────────────────────────────
 
@@ -618,7 +694,8 @@ def kendall_tpca(X, mu=None, max_frechet_mean_iter=100, use_parallel=True,
 
 def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
             cell_id_col="cell_id", max_frechet_mean_iter=1000, eta=1, mu=None,
-            use_parallel=False, num_threads=8, frechet_mean_tol=1e-4):
+            use_parallel=False, num_threads=8, frechet_mean_tol=1e-4,
+            store_history=False):
     """Run Kendall TPCA on a pre-shape embedding and write results to disk.
 
     Reads ``Pre_Shape_Space_Embedding.h5`` and ``Shape_Metadata.csv.gz``
@@ -636,6 +713,8 @@ def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
     use_parallel : bool
     num_threads : int
     frechet_mean_tol : float
+    store_history : bool
+        If True, return ``[mu, mu_history, grad_norm]`` after writing outputs.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -655,19 +734,24 @@ def run_kendall_tpca(pre_shape_input_dir, output_dir, cell_ids_to_analyze=None,
 
     with h5py.File(
         os.path.join(output_dir, "TPCA_Info.h5"), "w") as h5:
-        p, lambdas, v, mu, U_flat = kendall_tpca(
+        p, lambdas, v, mu_result, U_flat = kendall_tpca(
             pre_shape_mat[idxes],
-            mu=mu,                        
+            mu=mu,
             max_frechet_mean_iter=max_frechet_mean_iter,
             eta=eta,
             use_parallel=use_parallel,
             frechet_mean_tol=frechet_mean_tol,
             num_chunks=num_threads,
-            store_history=False)
+            store_history=store_history)
+
+        mu_computed = mu_result[0] if store_history else mu_result
+
         h5.create_dataset("processed_idxes", data=idxes)
         h5.create_dataset("embedding",        data=p)
         h5.create_dataset("variances",        data=lambdas)
         h5.create_dataset("v_matrix",         data=v)
-        h5.create_dataset("frechet_mean",     data=mu)
+        h5.create_dataset("frechet_mean",     data=mu_computed)
         h5.create_dataset("u_flattened",      data=U_flat)
         logger.info("TPCA_Info.h5 written to %s", output_dir)
+
+    return mu_result if store_history else None
