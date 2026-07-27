@@ -8,7 +8,6 @@ run_tpca(
   boundary_parquet_path,
   output_dir = NULL,
   cell_ids = NULL,
-  cell_groups = NULL,
   contour_type = c("cell", "nucleus"),
   num_vertices = 50L,
   cell_id_col = "cell_id",
@@ -27,21 +26,12 @@ run_tpca(
 \item{boundary_parquet_path}{Path to a parquet file containing boundary
 coordinates.}
 
-\item{output_dir}{Directory where intermediate/output files will be
-written. Optional. If \code{NULL} (the default), a temporary directory
-is used. When \code{return_results = TRUE} the temp directory is deleted
-after the call; when \code{return_results = FALSE} it is kept so the
-saved files remain accessible. An explicit path is created if absent and
+\item{output_dir}{Directory for intermediate/output files. If \code{NULL}
+(default), a temporary directory is used and cleaned up when
+\code{return_results = TRUE}. An explicit path is created if absent and
 always left on disk.}
 
-\item{cell_ids}{Optional character vector of cell IDs to analyse. Ignored
-when \code{cell_groups} is supplied.}
-
-\item{cell_groups}{Optional named character vector mapping cell IDs to
-group labels (e.g. \code{c(cell1 = "typeA", cell2 = "typeB")}). When
-supplied, TPCA is run separately per group and a named list of per-group
-results is returned. Each group is written to
-\code{<output_dir>/<group>_<contour_type>/}.}
+\item{cell_ids}{Optional character vector of cell IDs to analyse.}
 
 \item{contour_type}{One of \code{"cell"} or \code{"nucleus"}.}
 
@@ -68,28 +58,27 @@ Default 50L.}
 
 \item{return_results}{Logical. If \code{TRUE} (default), results are
 loaded into R and returned. If \code{FALSE}, results are written to
-disk and only the output paths are returned, with a message showing
-how to load them via \code{\link{load_kstitch_results}}.}
+disk and only the output paths are returned.}
 
 \item{load_pre_shape}{Logical. Whether to load the pre-shape embedding
-into \code{Info$pre_shape_embedding}. Default \code{TRUE}. Set to
-\code{FALSE} to skip loading this (potentially large) array — e.g.
-when results will be stored in a Seurat object via
-\code{\link{store_tpca_results}}.}
+into \code{Info$pre_shape_embedding}. Default \code{TRUE}.}
 }
 \value{
-When \code{return_results = TRUE}: a list (or named list of lists
-when \code{cell_groups} is supplied) with \code{TPCA_Embedding},
-\code{Info}, \code{Metadata}, \code{contour_type}, and
-\code{output_dir}.
-When \code{return_results = FALSE}: a list with \code{output_paths}
-(named character vector) and \code{fields} describing the structure
-returned by \code{load_kstitch_results(..., type = "tpca")}.
+When \code{return_results = TRUE}: a flat list with
+\code{TPCA_Embedding}, \code{Info}, \code{Metadata}, \code{contour_type},
+and \code{output_dir}.
+
+When \code{return_results = FALSE}: a list with \code{output_path}
+(character scalar, path to the directory containing output files).
 }
 \description{
 Calls \code{compute_pre_shape_embedding()} and \code{run_kendall_tpca()}
 from \code{kendall_tpca.py} via reticulate, then reads the results back
 into R.
+}
+\details{
+Operates on a single set of cells. For multi-group workflows, call this
+function once per group in an external loop.
 }
 \seealso{
 \code{\link{load_kstitch_results}}, \code{\link{store_tpca_results}}

@@ -10,7 +10,6 @@ export_seurat_contours(
   contour_type = c("cell", "nucleus"),
   output_dir = NULL,
   cell_ids = NULL,
-  cell_groups = NULL,
   num_vertices = 50L,
   eta = 1,
   use_parallel = FALSE,
@@ -38,15 +37,7 @@ files remain accessible. An explicit path is created
 if absent and always left on disk.}
 
 \item{cell_ids}{Optional character vector of cell IDs to analyse.
-Defaults to all cells in \code{obj}. Ignored when
-\code{cell_groups} is supplied.}
-
-\item{cell_groups}{Optional named character vector mapping cell IDs to
-group labels (e.g. \code{c(cell1 = "typeA", cell2 =
-                    "typeB")}). When supplied, TPCA is run separately per
-group and a named list of per-group results is
-returned. Each group is written to
-\code{<output_dir>/<group>_<contour_type>/}.}
+Defaults to all cells in \code{obj}.}
 
 \item{num_vertices}{Integer. Vertices to sample per contour (default 50).}
 
@@ -62,18 +53,17 @@ returned. Each group is written to
 
 \item{return_results}{Logical. If \code{TRUE} (default), results are
 loaded into R and returned. If \code{FALSE}, results are written to
-disk and only the output paths are returned, with a message showing
+disk and only the output path is returned, with a message showing
 how to load them via \code{\link{load_kstitch_results}}.}
 }
 \value{
-When \code{return_results = TRUE}: a named list of per-group
-result lists (name \code{"all"} when \code{cell_groups} is
-\code{NULL}), each with \code{TPCA_Embedding}, \code{Info},
+When \code{return_results = TRUE}: a named list with element
+\code{"all"} containing \code{TPCA_Embedding}, \code{Info},
 \code{Metadata}, \code{contour_type}, \code{group}, and
 \code{is_groupwise}.
-When \code{return_results = FALSE}: a list with \code{output_paths}
-(named character vector) and \code{fields} describing the structure
-returned by \code{load_kstitch_results(..., type = "tpca")}.
+When \code{return_results = FALSE}: a list with \code{output_path}
+(character scalar) giving the directory written by
+\code{load_kstitch_results(..., type = "tpca")}.
 }
 \description{
 Accepts the raw segmentation list returned by \code{ReadXenium} or

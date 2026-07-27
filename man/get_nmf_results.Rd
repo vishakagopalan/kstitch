@@ -4,30 +4,31 @@
 \alias{get_nmf_results}
 \title{Retrieve NMF results from a Seurat object}
 \usage{
-get_nmf_results(obj, group = NULL, reduction_prefix = "nmf_")
+get_nmf_results(obj, reduction_suffix = NULL, reduction_prefix = "nmf_")
 }
 \arguments{
 \item{obj}{A Seurat v5 object.}
 
-\item{group}{Character or NULL. Name of the group to retrieve (e.g.
-\code{"keratinocyte"} or \code{"all"} for single-group results). When
-NULL, all reductions with the given prefix are returned as a named list.}
+\item{reduction_suffix}{Character or NULL. Suffix used when storing the
+reduction (e.g. \code{"Keratinocytes"} for \code{"nmf_Keratinocytes"}).
+When NULL, all reductions with \code{reduction_prefix} are returned as a
+named list. If the requested suffix is not found, available NMF reductions
+are shown.}
 
-\item{reduction_prefix}{Character. Prefix used when storing reductions
-(default \code{"nmf_"}). Must match the prefix passed to
-\code{store_nmf_results()}.}
+\item{reduction_prefix}{Character. Prefix used when storing reductions.
+Default \code{"nmf_"}.}
 }
 \value{
-When \code{group} is specified: the \code{@misc} list for that
-group's NMF reduction, containing \code{Fit_Error}, \code{Fit_Summary},
-and \code{Factor_Gene_List}.
+When \code{reduction_suffix} is specified: the \code{@misc} list
+for that reduction, containing \code{Fit_Error}, \code{Fit_Summary}, and
+\code{Factor_Gene_List}.
 
-When \code{group = NULL}: a named list of such \code{@misc} lists, one
-per NMF reduction found in \code{obj}, keyed by group name.
+When \code{reduction_suffix = NULL}: a named list of such \code{@misc}
+lists, one per matching NMF reduction, keyed by suffix.
 }
 \description{
-Extracts the \code{@misc} slot of one or all NMF DimReduc objects written
-by \code{\link{store_nmf_results}}.
+Extracts the \code{@misc} slot of one or all NMF \code{DimReduc} objects
+written by \code{\link{store_nmf_results}}.
 }
 \seealso{
 \code{\link{store_nmf_results}}, \code{\link{compute_nmf}}

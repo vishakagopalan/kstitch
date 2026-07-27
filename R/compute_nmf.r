@@ -40,7 +40,7 @@
   if (length(common_genes) < 2L) return(c(silhouette = NA_real_, entropy = NA_real_))
 
   W_list <- lapply(W_list, function(W) {
-    W <- W[common_genes, , drop = FALSE]
+    W    <- W[common_genes, , drop = FALSE]
     keep <- apply(W, 2, function(x) stats::sd(x) > 0 && all(is.finite(x)))
     W[, keep, drop = FALSE]
   })
@@ -84,38 +84,20 @@
   params <- .strip_reserved(params, c("k", "lambda", "seed", "nCores", "verbose",
                                       "datasetVar", "layer", "assay", "reduction"))
   do.call(rliger::runOnlineINMF,
-          c(list(obj, k = k, minibatchSize = mini_batch_size, verbose=F,
+          c(list(obj, k = k, minibatchSize = mini_batch_size, verbose = FALSE,
                  seed = seed, nCores = nCores, reduction = reduction),
             params))
 }
 
 # ---- features argument resolution ------------------------------------------
 
-#' Resolve the features argument for a single group
-#'
-#' @param features NULL, a character vector, or a named list of character
-#'   vectors.
-#' @param grp Character. The current group label.
-#' @return A character vector of features for \code{grp}, or NULL if
-#'   \code{features} is NULL (signals use of internal gene filtering).
 #' @keywords internal
 .resolve_features_for_group <- function(features, grp) {
   if (is.null(features)) return(NULL)
   if (is.character(features)) return(features)
-  # named list — name already validated upstream
   features[[grp]]
 }
 
-#' Validate the features argument against group levels and object features
-#'
-#' Errors if a named list does not cover all group levels exactly. For each
-#' resolved gene set, silently drops genes absent from the object and warns if
-#' fewer than 100 genes remain.
-#'
-#' @param features NULL, character vector, or named list.
-#' @param group_levels Character vector of group labels.
-#' @param all_features Character vector of all features present in the object.
-#' @return Invisibly returns TRUE. Called for side-effects only.
 #' @keywords internal
 .validate_features_arg <- function(features, group_levels, all_features) {
   if (is.null(features)) return(invisible(TRUE))
@@ -134,7 +116,6 @@
     }
     gene_sets <- features
   } else {
-    # plain character vector — same set applied to all groups
     gene_sets <- stats::setNames(
       rep(list(features), length(group_levels)),
       group_levels
@@ -197,15 +178,11 @@
     )
   }
 
-  # ---- gene filtering -------------------------------------------------------
   data_mat           <- obj[[assay_name]]@layers[[count_matrix_layer]]
   rownames(data_mat) <- SeuratObject::Features(obj)
   colnames(data_mat) <- Seurat::Cells(obj)
 
   if (!is.null(features)) {
-    # User-supplied gene set: intersect with object features (absent genes
-    # already warned upstream in .validate_features_arg), then apply
-    # gene_pct_threshold filter identically to the default path.
     candidate_genes <- intersect(features, SeuratObject::Features(obj))
     genes_to_use    <- names(which(
       Matrix::rowMeans(data_mat[candidate_genes, , drop = FALSE] > 0) >= gene_pct_threshold
@@ -222,7 +199,6 @@
   mini_batch_size <- if (length(Seurat::Cells(obj)) > 5000) 5000L else
     max(2L, floor(length(Seurat::Cells(obj)) / 2))
 
-  # ---- preprocess -----------------------------------------------------------
   if (!"layer" %in% names(normalize_params))
     normalize_params[["layer"]] <- count_matrix_layer
 
@@ -236,9 +212,6 @@
   }
 
   if (!is.null(features)) {
-    # VariableFeatures<-.Assay5 intersects against rownames(assay) and errors
-    # if none match — this fails for some cell type subsets even when genes are
-    # present via Features(). Bypass by writing directly to the assay metadata.
     row_names    <- rownames(obj@assays[[assay_name]][[]])
     rank_values  <- match(row_names, genes_to_use)
     names(rank_values) <- row_names
@@ -256,7 +229,6 @@
   n_factors      <- default_num_factors
   fit_ok         <- FALSE
 
-  # ---- fit with k fallback --------------------------------------------------
   while (!fit_ok) {
     fit_ok  <- TRUE
     obj_try <- tryCatch({
@@ -291,7 +263,6 @@
     }
   }
 
-  # ---- stability runs -------------------------------------------------------
   stability_score  <- c(silhouette = NA_real_, entropy = NA_real_)
   replicate_errors <- numeric(0)
 
@@ -300,11 +271,12 @@
     for (i in seq_len(stability_n_runs)) {
       rep_reduction <- paste0(reduction_name, "_stab_", i)
       rep_obj <- tryCatch(
+        suppressWarnings(
         .run_one_online_fit(obj, n_factors, mini_batch_size,
                             seed      = stability_seed + i - 1L,
                             reduction = rep_reduction,
                             params    = runOnlineINMF_params,
-                            nCores    = nCores),
+                            nCores    = nCores)),
         error = function(e) NULL
       )
       if (!is.null(rep_obj)) {
@@ -317,12 +289,10 @@
       stability_score <- .compute_kotliar_stability(W_list, n_factors)
   }
 
-  # ---- quantile normalisation -----------------------------------------------
   obj <- do.call(rliger::quantileNorm,
                  c(list(obj, reduction = reduction_name), quantileNorm_params))
   norm_reduction <- paste0(reduction_name, "Norm")
 
-  # ---- extract results ------------------------------------------------------
   if (use_normalized_factor_scores) {
     nmf_mat     <- .get_embeddings(obj, norm_reduction)
     nmf_loading <- .get_feature_loadings(obj, norm_reduction)
@@ -363,79 +333,70 @@
 
 # ---- exported function ------------------------------------------------------
 
-#' Run NMF on a Seurat object, optionally per cell group
+#' Run NMF on a Seurat object
 #'
 #' Wraps \code{rliger} consensus or online iNMF with Kotliar stability scoring.
-#' Results are returned as a named list of per-group fit objects, or serialized
-#' to disk when \code{return_results = FALSE}.
+#' Operates on all cells in \code{obj}. For multi-group workflows, call this
+#' function once per group in an external loop, passing a pre-subsetted object
+#' each time.
 #'
 #' @param obj A Seurat v5 object.
 #' @param assay_name Character. Name of the assay to use.
-#' @param group.by Character or NULL. Column in \code{obj@@meta.data} defining
-#'   groups. When NULL, all cells are treated as a single group returned under
-#'   the key \code{"all"}.
 #' @param features NULL (default), a character vector, or a named list of
 #'   character vectors. Controls which genes are used for NMF, bypassing
-#'   internal gene filtering when supplied.
+#'   internal gene filtering when supplied. When a named list is passed, names
+#'   must match the single group label \code{"all"} or be omitted (plain
+#'   character vector preferred for single-group use).
 #'   \itemize{
 #'     \item \code{NULL}: internal gene filtering via \code{gene_pct_threshold}
-#'       and \code{selectGenes_params} is applied (existing behaviour).
-#'     \item Character vector: the same gene set is used for all groups.
-#'     \item Named list: one character vector per group; names must exactly
-#'       match the group levels present in \code{obj@@meta.data[[group.by]]}.
-#'       Errors if any group is missing or extra names are present.
+#'       and \code{selectGenes_params} is applied.
+#'     \item Character vector: this gene set is used directly.
 #'   }
-#'   In all non-NULL cases, genes absent from the object are silently dropped
-#'   and a warning is emitted if fewer than 100 genes remain for any group.
+#'   Genes absent from the object are silently dropped. A warning is emitted
+#'   if fewer than 100 genes remain.
 #' @param num_top_genes_per_factor Integer. Number of top genes to record per
 #'   NMF factor in the \code{Factor_Gene_List} output.
 #' @param batch_var Character or NULL. Column in \code{obj@@meta.data} to use
 #'   as a batch variable for iNMF integration.
 #' @param count_matrix_layer Character. Layer in the assay containing raw
 #'   counts (default \code{"counts"}).
-#' @param min_cells Integer. Groups with fewer cells are skipped.
-#' @param gene_pct_threshold Numeric in \code{[0, 1]}. Minimum fraction of cells
-#'   expressing a gene for it to be retained. Ignored when \code{features} is
-#'   supplied.
+#' @param min_cells Integer. If the object has fewer cells, an empty result is
+#'   returned.
+#' @param gene_pct_threshold Numeric in \code{[0, 1]}. Minimum fraction of
+#'   cells expressing a gene for it to be retained. Applied even when
+#'   \code{features} is supplied.
 #' @param use_normalized_factor_scores Logical. Whether to use quantile-
 #'   normalised factor scores (default TRUE).
-#' @param default_num_factors Integer. Number of NMF factors when automatic
-#'   selection is not triggered.
+#' @param default_num_factors Integer. Number of NMF factors.
 #' @param nCores Integer. Number of cores passed to rliger.
 #' @param normalize_params,selectGenes_params,scaleNotCenter_params,runCINMF_params,quantileNorm_params,runOnlineINMF_params
 #'   Named lists of additional arguments forwarded to the corresponding rliger
 #'   functions. \code{selectGenes_params} is ignored when \code{features} is
 #'   supplied.
-#' @param integration_method Character. One of \code{"consensus"} (default) or
-#'   \code{"online"}.
+#' @param integration_method Character. One of \code{"consensus"} or
+#'   \code{"online"} (default).
 #' @param stability_n_runs Integer. Number of NMF runs for Kotliar stability
 #'   scoring.
 #' @param stability_seed Integer. RNG seed for stability runs.
 #' @param verbose Logical. Whether to emit progress messages (default TRUE).
-#' @param return_results Logical. When TRUE (default) results are loaded into
-#'   memory and returned as a named list. When FALSE, each group's result is
-#'   serialized to \code{<output_dir>/<group>.rds} and a named list of file
-#'   paths is returned instead.
+#' @param return_results Logical. When TRUE (default) the result list is
+#'   returned. When FALSE, the result is serialized to
+#'   \code{<output_dir>/all.rds} and the file path is returned.
 #' @param output_dir Character or NULL. Directory for serialized output when
-#'   \code{return_results = FALSE}. When NULL a temporary directory is created
-#'   automatically and is \emph{not} cleaned up on exit (so the files remain
-#'   accessible). Ignored when \code{return_results = TRUE}.
+#'   \code{return_results = FALSE}. When NULL a temporary directory is used
+#'   and not cleaned up. Ignored when \code{return_results = TRUE}.
 #'
-#' @return When \code{return_results = TRUE}: a named list of per-group fit
-#'   lists. Each entry carries \code{group} (character) and
-#'   \code{is_groupwise} (logical) fields in addition to the NMF outputs from
-#'   \code{.run_nmf_one_group()}. Single-group results are returned under the
-#'   key \code{"all"}.
+#' @return When \code{return_results = TRUE}: a list with
+#'   \code{Factor_Gene_List}, \code{NMF_Matrix}, \code{NMF_Loading},
+#'   \code{Fit_Error}, and \code{Fit_Summary}.
 #'
 #'   When \code{return_results = FALSE}: a list with element
-#'   \code{output_paths}, a named character vector mapping group names to RDS
-#'   file paths.
+#'   \code{output_path} (character scalar, path to the serialized RDS).
 #'
 #' @seealso \code{\link{store_nmf_results}}, \code{\link{load_kstitch_results}}
 #' @export
 compute_nmf <- function(obj,
                         assay_name,
-                        group.by                     = NULL,
                         features                     = NULL,
                         num_top_genes_per_factor     = 100,
                         batch_var                    = NULL,
@@ -460,16 +421,10 @@ compute_nmf <- function(obj,
 
   integration_method <- match.arg(integration_method)
 
-  if (!is.null(group.by) && !group.by %in% colnames(obj@meta.data)) {
-    stop(sprintf("`group.by` column '%s' not found in obj@meta.data.", group.by))
+  if (!is.null(features) && !is.character(features)) {
+    stop("`features` must be NULL or a character vector.")
   }
 
-  # ---- validate features argument ------------------------------------------
-  if (!is.null(features) && !is.character(features) && !is.list(features)) {
-    stop("`features` must be NULL, a character vector, or a named list of character vectors.")
-  }
-
-  # ---- resolve output directory --------------------------------------------
   if (!return_results && is.null(output_dir)) {
     output_dir <- file.path(tempdir(), paste0("kstitch_nmf_", .random_id()))
     dir.create(output_dir, recursive = TRUE)
@@ -477,66 +432,49 @@ compute_nmf <- function(obj,
     if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
   }
 
-  # ---- groups --------------------------------------------------------------
-  all_cells <- rownames(obj@meta.data)
-  if (is.null(group.by)) {
-    groups <- list(all = all_cells)
-  } else {
-    meta_vec <- obj@meta.data[all_cells, group.by]
-    groups   <- split(all_cells, meta_vec)
+  all_features <- SeuratObject::Features(obj)
+  if (!is.null(features)) {
+    present <- intersect(features, all_features)
+    if (length(present) < 100L) {
+      warning(sprintf(
+        "Only %d gene(s) in `features` are present in the object. ",
+        length(present)
+      ), "NMF results may be unreliable.")
+    }
   }
 
-  is_groupwise  <- !is.null(group.by)
-  group_levels  <- names(groups)
-  all_features  <- SeuratObject::Features(obj)
+  if (verbose) message("Running NMF ...")
 
-  # ---- validate features against group levels and object features ----------
-  .validate_features_arg(features, group_levels, all_features)
+  result <- .run_nmf_one_group(
+    obj                          = obj,
+    assay_name                   = assay_name,
+    num_top_genes_per_factor     = num_top_genes_per_factor,
+    batch_var                    = batch_var,
+    count_matrix_layer           = count_matrix_layer,
+    min_cells                    = min_cells,
+    gene_pct_threshold           = gene_pct_threshold,
+    use_normalized_factor_scores = use_normalized_factor_scores,
+    default_num_factors          = default_num_factors,
+    nCores                       = nCores,
+    normalize_params             = normalize_params,
+    selectGenes_params           = selectGenes_params,
+    scaleNotCenter_params        = scaleNotCenter_params,
+    runCINMF_params              = runCINMF_params,
+    quantileNorm_params          = quantileNorm_params,
+    integration_method           = integration_method,
+    stability_n_runs             = stability_n_runs,
+    stability_seed               = stability_seed,
+    runOnlineINMF_params         = runOnlineINMF_params,
+    features                     = features
+  )
 
-  # ---- per-group NMF -------------------------------------------------------
-  results <- list()
-
-  for (grp in group_levels) {
-    if (verbose) message(sprintf("Running NMF for group '%s' ...", grp))
-
-    grp_cells     <- groups[[grp]]
-    grp_obj       <- subset(obj, cells = grp_cells)
-    grp_features  <- .resolve_features_for_group(features, grp)
-
-    fit <- .run_nmf_one_group(
-      obj                          = grp_obj,
-      assay_name                   = assay_name,
-      num_top_genes_per_factor     = num_top_genes_per_factor,
-      batch_var                    = batch_var,
-      count_matrix_layer           = count_matrix_layer,
-      min_cells                    = min_cells,
-      gene_pct_threshold           = gene_pct_threshold,
-      use_normalized_factor_scores = use_normalized_factor_scores,
-      default_num_factors          = default_num_factors,
-      nCores                       = nCores,
-      normalize_params             = normalize_params,
-      selectGenes_params           = selectGenes_params,
-      scaleNotCenter_params        = scaleNotCenter_params,
-      runCINMF_params              = runCINMF_params,
-      quantileNorm_params          = quantileNorm_params,
-      integration_method           = integration_method,
-      stability_n_runs             = stability_n_runs,
-      stability_seed               = stability_seed,
-      runOnlineINMF_params         = runOnlineINMF_params,
-      features                     = grp_features
-    )
-
-    fit$group        <- grp
-    fit$is_groupwise <- is_groupwise
-
-    results[[grp]] <- fit
-  }
-
-  # ---- return_results = FALSE ----------------------------------------------
   if (!return_results) {
-    output_paths <- .serialize_group_results(results, output_dir, type = "nmf")
-    return(list(output_paths = output_paths))
+    path <- file.path(output_dir, "all.rds")
+    saveRDS(result, file = path)
+    message("NMF result written to: ", path)
+    message(sprintf("Load with load_kstitch_results(\"%s\", type = \"nmf\")", path))
+    return(list(output_path = path))
   }
 
-  results
+  result
 }

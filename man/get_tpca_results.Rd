@@ -12,8 +12,9 @@ get_tpca_results(obj, contour_type = NULL, group = NULL)
 \item{contour_type}{\code{"cell"} or \code{"nucleus"}. \code{NULL}
 returns the full tpca misc list.}
 
-\item{group}{Optional group label. When supplied, returns the per-group
-fit metadata for the given contour type.}
+\item{group}{Optional group label for groupwise results. When supplied,
+returns the per-group fit metadata for the given contour type. If not
+found, available groups are shown.}
 }
 \value{
 A list of TPCA fit metadata.
