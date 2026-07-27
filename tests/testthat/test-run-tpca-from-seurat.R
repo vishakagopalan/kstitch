@@ -1,4 +1,4 @@
-# Tests for export_seurat_contours() and its internal helpers.
+# Tests for run_tpca_from_seurat() and its internal helpers.
 # Python / TPCA execution is not tested here; tests cover everything up to
 # the reticulate boundary.
 
@@ -74,13 +74,13 @@ test_that(".normalise_columns errors when no candidate found", {
   )
 })
 
-# ── export_seurat_contours() input validation ─────────────────────────────────
+# ── run_tpca_from_seurat() input validation ─────────────────────────────────
 
 test_that("contour_type is matched and rejects bad values", {
   obj <- make_seurat_stub(CELL_IDS)
   seg <- make_seg_list(CELL_IDS, "cell")
   expect_error(
-    export_seurat_contours(obj, seg, contour_type = "mitochondria"),
+    run_tpca_from_seurat(obj, seg, contour_type = "mitochondria"),
     regexp = "arg"   # match.arg error
   )
 })
@@ -89,7 +89,7 @@ test_that("errors when no contours remain after cell_id subsetting", {
   obj <- make_seurat_stub(CELL_IDS)
   seg <- make_seg_list(CELL_IDS, "cell")
   expect_error(
-    export_seurat_contours(obj, seg, cell_ids = "nonexistent_cell"),
+    run_tpca_from_seurat(obj, seg, cell_ids = "nonexistent_cell"),
     "No contours remain"
   )
 })
@@ -108,11 +108,11 @@ test_that("cell_ids defaults to all cells in obj", {
     compute_pre_shape_embedding = function(...) { captured <<- list(...)$cell_ids_to_analyze },
     run_kendall_tpca            = function(...) list(NULL, NULL, numeric(0))
   )
-  mockery::stub(export_seurat_contours, "reticulate::import_from_path", mock_mod)
-  mockery::stub(export_seurat_contours, ".load_kendall_tpca_output",
+  mockery::stub(run_tpca_from_seurat, "reticulate::import_from_path", mock_mod)
+  mockery::stub(run_tpca_from_seurat, ".load_kendall_tpca_output",
                 list(TPCA_Embedding = NULL, Info = NULL, Metadata = NULL))
 
-  suppressMessages(export_seurat_contours(obj, seg))
+  suppressMessages(run_tpca_from_seurat(obj, seg))
   expect_setequal(as.character(reticulate::py_to_r(captured)), CELL_IDS[1:3])
 })
 
@@ -127,10 +127,10 @@ test_that("return_results = FALSE returns list with output_path", {
     compute_pre_shape_embedding = function(...) invisible(NULL),
     run_kendall_tpca            = function(...) list(NULL, NULL, numeric(0))
   )
-  mockery::stub(export_seurat_contours, "reticulate::import_from_path", mock_mod)
+  mockery::stub(run_tpca_from_seurat, "reticulate::import_from_path", mock_mod)
 
   result <- suppressMessages(
-    export_seurat_contours(obj, seg, return_results = FALSE)
+    run_tpca_from_seurat(obj, seg, return_results = FALSE)
   )
   expect_named(result, "output_path")
   expect_type(result$output_path, "character")
