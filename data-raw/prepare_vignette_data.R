@@ -17,6 +17,7 @@ library(kstitch)
 library(Seurat)
 library(dplyr)
 library(lme4)
+library(arrow)
 
 # ---- File paths (update these to point to your saved RDS files) -----------
 
@@ -44,16 +45,41 @@ nucleus_meta_data_df             <- read.csv(input_files$nucleus_meta_data_df)
 cell_meta_data_df                <- read.csv(input_files$cell_meta_data_df)
 
 xenium_obj <- subset(xenium_obj, features = keratinocyte_genes)
+# num_cells_to_sample <- 100
+# set.seed(265)
+# cells_sampled <- sample( keratinocytes_with_single_nuclei,num_cells_to_sample)
+# xenium_obj <- subset(xenium_obj, cells = cells_sampled)
 
 # ---- 1. Use the xenium object as-is (already keratinocyte subset) ----------
 
 obj <- xenium_obj
 cat(sprintf("Starting with: %d cells\n", ncol(obj)))
 
+xenium_data_path <- "~/morphology-gex/data/Xenium_Prime_Human_Skin_FFPE_outs/"
+melanoma_xenium_segmentation_info <- ReadXenium(
+  xenium_data_path,
+  outs = c("segmentation_method"),
+  type = c("segmentations", "nucleus_segmentations", "centroids")
+)
+
+cell_seg_meta_data_df <- read_parquet("~/morphology-gex/data/Xenium_Prime_Human_Skin_FFPE_outs/cells.parquet")
+
+cell_ids_with_single_nucleus <- dplyr::filter( cell_seg_meta_data_df, nucleus_count == 1) %>% pull(cell_id) %>%
+  intersect(.,Cells(obj))
+
+
 # ---- 2. Store TPCA results (Cell) ------------------------------------------
 
-tpca_cell <- load_kstitch_results("~/Downloads/For_Vignette_Cell_TPCA/", type = "tpca")
-tpca_cell$contour_type <- "cell"
+tpca_cell <- run_tpca_from_seurat(
+  melanoma_xenium_obj,
+  seg_list     = melanoma_xenium_segmentation_info,
+  output_dir   = "~/Downloads/For_Vignette_Cell_TPCA/",    #Optional. If omitted, data is written to a temporary directory.
+  contour_type = "cell",
+  use_parallel = TRUE,
+  num_threads  = 8,
+  cell_ids     = Cells(obj), #Optional. For sub-setting nuclei.
+  store_history = TRUE    #Optional. Allows change in estimate of mean shape to be tracked along with convergence towards mean.
+)
 
 obj <- store_tpca_results(obj, tpca_cell, reduction_key_prefix = "CellShapePC_")
 cat(sprintf("TPCA cell stored: %d cells with embeddings\n",
@@ -61,8 +87,16 @@ cat(sprintf("TPCA cell stored: %d cells with embeddings\n",
 
 # ---- 3. Store TPCA results (Nucleus) ---------------------------------------
 
-tpca_nucleus <- load_kstitch_results("~/Downloads/For_Vignette_Nucleus_TPCA/", type = "tpca")
-tpca_nucleus$contour_type <- "nucleus"
+tpca_nucleus <- run_tpca_from_seurat(
+  melanoma_xenium_obj,
+  seg_list     = melanoma_xenium_segmentation_info,
+  output_dir   = "~/Downloads/For_Vignette_Nucleus_TPCA/",    #Optional. If omitted, data is written to a temporary directory.
+  contour_type = "nucleus",
+  use_parallel = TRUE,
+  num_threads  = 8,
+  cell_ids     = cell_ids_with_single_nucleus, #Optional. For sub-setting nuclei.
+  store_history = TRUE   #Optional. Allows change in estimate of mean shape to be tracked along with convergence towards mean.
+)
 
 obj <- store_tpca_results(obj, tpca_nucleus, reduction_key_prefix = "NucleusShapePC_")
 cat(sprintf("TPCA nucleus stored: %d cells with embeddings\n",
@@ -71,7 +105,7 @@ cat(sprintf("TPCA nucleus stored: %d cells with embeddings\n",
 # ---- 4. Store NMF results --------------------------------------------------
 
 # nmf_output is a flat result list from compute_nmf()
-obj <- store_nmf_results(obj, nmf_output$Keratinocytes, reduction_suffix = "all")
+obj <- store_nmf_results(obj, nmf_output$Keratinocytes, reduction_suffix = NULL)
 cat(sprintf("NMF stored: %d cells x %d factors\n",
             nrow(nmf_output$Keratinocytes$NMF_Matrix), ncol(nmf_output$Keratinocytes$NMF_Matrix)))
 
@@ -108,7 +142,7 @@ meta <- obj@meta.data
 
 tpca_cell_cells   <- rownames(Seurat::Embeddings(obj, "tpca_cell"))
 tpca_nuc_cells    <- rownames(Seurat::Embeddings(obj, "tpca_nucleus"))
-nmf_cells         <- rownames(Seurat::Embeddings(obj, "nmf_all"))
+nmf_cells         <- rownames(Seurat::Embeddings(obj, "nmf"))
 shared_cell_cells <- intersect(tpca_cell_cells, nmf_cells)
 shared_nuc_cells  <- intersect(tpca_nuc_cells,  nmf_cells)
 
@@ -132,7 +166,7 @@ scaled_log_depth_nuc  <- setNames(scale(log_depth_vec[shared_nuc_cells])[, 1],  
 # ---- 7. Build shape and expression matrices (Cell) -------------------------
 
 shape_pcs_cell <- Seurat::Embeddings(obj, "tpca_cell")[shared_cell_cells, 1:10]
-expr_mat_cell  <- Seurat::Embeddings(obj, "nmf_all")[shared_cell_cells, ]
+expr_mat_cell  <- Seurat::Embeddings(obj, "nmf")[shared_cell_cells, ]
 
 shape_mat_cell_unreg <- cbind(shape_pcs_cell,
                               scaled_log_area = scaled_cell_log_area[shared_cell_cells])
@@ -144,7 +178,7 @@ expr_mat_cell_reg  <- .regress_lmer(expr_mat_cell,        scaled_log_depth_cell,
 # ---- 8. Build shape and expression matrices (Nucleus) ----------------------
 
 shape_pcs_nuc <- Seurat::Embeddings(obj, "tpca_nucleus")[shared_nuc_cells, 1:10]
-expr_mat_nuc  <- Seurat::Embeddings(obj, "nmf_all")[shared_nuc_cells, ]
+expr_mat_nuc  <- Seurat::Embeddings(obj, "nmf")[shared_nuc_cells, ]
 
 shape_mat_nuc_unreg <- cbind(shape_pcs_nuc,
                              scaled_log_area = scaled_nuc_log_area[shared_nuc_cells])
@@ -155,17 +189,17 @@ expr_mat_nuc_reg  <- .regress_lmer(expr_mat_nuc,        scaled_log_depth_nuc, se
 
 # ---- 9. Run CCA — Cell, unregressed ----------------------------------------
 cat("Running CCA without regression (cell)...\n")
-cca_cell_unreg <- link_shape_and_factors(
-  obj       = obj,
-  shape_mat = shape_mat_cell_unreg,
-  expr_mat  = expr_mat_cell
-)
-obj <- store_kstitch_results(obj, cca_cell_unreg,
-                             reduction_name    = "cell_cca_unregressed",
-                             reduction_key_csp = "CSPCU_",
-                             reduction_key_cep = "CEPCU_")
-cat(sprintf("CCA cell unregressed stored: %d components\n",
-            length(cca_cell_unreg$CC_Corr_Coefs)))
+# cca_cell_unreg <- link_shape_and_factors(
+#   obj       = obj,
+#   shape_mat = shape_mat_cell_unreg,
+#   expr_mat  = expr_mat_cell
+# )
+# obj <- store_kstitch_results(obj, cca_cell_unreg,
+#                              reduction_name    = "cell_cca_unregressed",
+#                              reduction_key_csp = "CSPCU_",
+#                              reduction_key_cep = "CEPCU_")
+# cat(sprintf("CCA cell unregressed stored: %d components\n",
+#             length(cca_cell_unreg$CC_Corr_Coefs)))
 
 # ---- 10. Run CCA — Cell, regressed -----------------------------------------
 cat("Running CCA with regression (cell)...\n")
@@ -183,17 +217,17 @@ cat(sprintf("CCA cell regressed stored: %d components\n",
 
 # ---- 11. Run CCA — Nucleus, unregressed ------------------------------------
 cat("Running CCA without regression (nucleus)...\n")
-cca_nuc_unreg <- link_shape_and_factors(
-  obj       = obj,
-  shape_mat = shape_mat_nuc_unreg,
-  expr_mat  = expr_mat_nuc
-)
-obj <- store_kstitch_results(obj, cca_nuc_unreg,
-                             reduction_name    = "nuc_cca_unregressed",
-                             reduction_key_csp = "CSPNU_",
-                             reduction_key_cep = "CEPNU_")
-cat(sprintf("CCA nucleus unregressed stored: %d components\n",
-            length(cca_nuc_unreg$CC_Corr_Coefs)))
+# cca_nuc_unreg <- link_shape_and_factors(
+#   obj       = obj,
+#   shape_mat = shape_mat_nuc_unreg,
+#   expr_mat  = expr_mat_nuc
+# )
+# obj <- store_kstitch_results(obj, cca_nuc_unreg,
+#                              reduction_name    = "nuc_cca_unregressed",
+#                              reduction_key_csp = "CSPNU_",
+#                              reduction_key_cep = "CEPNU_")
+# cat(sprintf("CCA nucleus unregressed stored: %d components\n",
+#             length(cca_nuc_unreg$CC_Corr_Coefs)))
 
 # ---- 12. Run CCA — Nucleus, regressed --------------------------------------
 cat("Running CCA with regression (nucleus)...\n")
@@ -214,16 +248,26 @@ saved_misc <- obj@misc
 
 obj <- DietSeurat(obj,
                   assays    = Seurat::Assays(obj),
-                  dimreducs = c("tpca_cell", "tpca_nucleus", "nmf_all",
-                                "cell_cca_unregressed_csp", "cell_cca_unregressed_cep",
+                  dimreducs = c("tpca_cell", "tpca_nucleus", "nmf",
+                                #"cell_cca_unregressed_csp", "cell_cca_unregressed_cep",
                                 "cell_cca_regressed_csp",   "cell_cca_regressed_cep",
-                                "nuc_cca_unregressed_csp",  "nuc_cca_unregressed_cep",
+                              #  "nuc_cca_unregressed_csp",  "nuc_cca_unregressed_cep",
                                 "nuc_cca_regressed_csp",    "nuc_cca_regressed_cep"))
 obj@misc <- saved_misc
 
 out_dir  <- file.path("inst", "extdata")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 out_path <- file.path(out_dir, "kstitch_vignette_xenium.rds")
+
+keratinocyte_seg_info <- list("segmentation_method"=melanoma_xenium_segmentation_info$segmentation_method[Cells(xenium_obj),],
+                             "segmentations"=dplyr::select(melanoma_xenium_segmentation_info$segmentations, cell, x, y) %>% dplyr::filter(cell %in% Cells(obj)),
+                              "nucleus_segmentations"=dplyr::select(melanoma_xenium_segmentation_info$nucleus_segmentations, cell, x, y) %>%
+                               dplyr::filter(cell %in% keratinocytes_cells_with_single_nucleus))
+
+saveRDS( tpca_cell, file.path(out_dir,"kstitch_vignette_tpca_cell.rds"))
+saveRDS( tpca_nucleus, file.path(out_dir,"kstitch_vignette_tpca_nucleus.rds"))
+saveRDS( keratinocyte_seg_info, file.path(out_dir,"kstitch_keratinocyte_segmentations.rds"))
+
 saveRDS(
   list(
     obj      = obj,

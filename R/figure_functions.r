@@ -171,45 +171,63 @@ plot_csp_loadings <- function(group_result,
 
 # ---- Figure 4: CSP-binned boundary montage ----------------------------------
 
-#' Plot CSP-binned cell boundary montage
+#' Boundary montage along a CSP or CEP axis
 #'
-#' Bins cells by their CSP score into deciles, selects bin medoids (cells with
-#' smallest mean pairwise TPCA distance), Procrustes-aligns their contours to
-#' the Fréchet mean, and plots them as a montage faceted by bin.
+#' Bins cells by their score on a chosen canonical variate (CSP or CEP),
+#' selects medoid cells within each bin, and plots their Procrustes-aligned
+#' contours in a faceted montage. When the pre-shape embedding is unavailable,
+#' shapes are reconstructed from TPCA PCA coordinates.
 #'
-#' When \code{area_rescale = TRUE} (default), normalised contours are rescaled
-#' by \code{sqrt(area)} so the displayed size reflects true cell area. Area
-#' values are read from the \code{Metadata} element of \code{tpca_result},
-#' which is returned directly by \code{\link{run_tpca}} and
-#' \code{\link{run_tpca_from_seurat}} — no disk access is required.
+#' @param group_result A kstitch group result object containing \code{CSP_Scores}
+#'   and \code{CEP_Scores} matrices (cells x canonical variates).
+#' @param tpca_result A kstitch TPCA result object containing \code{Info},
+#'   \code{TPCA_Embedding}, and optionally \code{Metadata} and
+#'   \code{contour_type}.
+#' @param cc_idx Integer. Index of the canonical variate to bin cells by.
+#'   Default \code{1L}.
+#' @param num_bins Integer. Number of quantile bins along the score axis.
+#'   Default \code{10L}.
+#' @param num_cells_for_boundary Integer. Number of medoid cells to display per
+#'   bin. Default \code{6L}.
+#' @param pcs_to_use Integer vector. TPCA PCs used for medoid selection and,
+#'   when reconstructing shapes, for shape reconstruction. PCs exceeding the
+#'   embedding rank are silently dropped. Default \code{1:10}.
+#' @param norm_rescale Logical. If \code{TRUE}, rescales each reconstructed or
+#'   retrieved contour by the per-cell Frobenius norm stored in
+#'   \code{tpca_result$Metadata$scale}, restoring approximate original contour
+#'   size. Disabled with a message if the \code{scale} column is absent.
+#'   Default \code{FALSE}.
+#' @param reconstruction_pcs Integer or \code{NULL}. When shapes are
+#'   reconstructed (i.e. \code{pre_shape_embedding} is \code{NULL}), caps the
+#'   number of PCs from \code{pcs_to_use} passed to
+#'   \code{reconstruct_shape_from_pca_coords}. \code{NULL} uses all of
+#'   \code{pcs_to_use}. Default \code{NULL}.
+#' @param score_type Character. Which canonical variate scores to bin cells by.
+#'   One of \code{"CSP"} (cell shape program) or \code{"CEP"} (cell expression
+#'   program). Default \code{"CSP"}.
+#' @param line_colour Character. Colour passed to \code{geom_polygon} for
+#'   contour outlines. Default \code{"steelblue"}.
 #'
-#' If the pre-shape embedding is not available in \code{tpca_result}, shapes
-#' are reconstructed from the top \code{reconstruction_pcs} PCA components.
-#' This is clearly flagged in the plot subtitle and via an R message.
+#' @return A \code{ggplot} object. The assembled coordinate data frame is
+#'   attached as \code{attr(p, "coord_data")} with columns \code{x},
+#'   \code{y}, \code{cell}, and \code{bin}.
 #'
-#' @param group_result A single group's entry from the list returned by
-#'   \code{\link{link_shape_and_factors}}.
-#' @param tpca_result A single group's TPCA result — i.e. one element of the
-#'   named list returned by \code{\link{run_tpca}} or
-#'   \code{\link{run_tpca_from_seurat}} (e.g. \code{tpca_result$all} or
-#'   \code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
-#'   list directly.
-#' @param cc_idx Integer. Which CSP component to use for binning. Default 1L.
-#' @param num_bins Integer. Number of bins. Default 10L.
-#' @param num_cells_for_boundary Integer. Number of medoid cells to display
-#'   per bin. Default 6L.
-#' @param pcs_to_use Integer vector. Which shape PCs to use for medoid
-#'   distance computation. Default \code{1:10}.
-#' @param area_rescale Logical. Rescale contours by \code{sqrt(area)} to
-#'   reflect true cell size. Default \code{TRUE}.
-#' @param reconstruction_pcs Integer. Number of PCA components to use for
-#'   shape reconstruction when pre-shape embedding is unavailable.
-#'   Default = all available.
-#' @param line_colour Character. Colour for contour outlines. Default
-#'   \code{"steelblue"}.
+#' @details
+#' Medoid cells are identified as those with the smallest mean pairwise
+#' Euclidean distance to other cells in the same bin, computed in the subspace
+#' defined by \code{pcs_to_use}.
 #'
-#' @return A \code{ggplot} object. The underlying coordinate data frame is
-#'   attached as attribute \code{"coord_data"} for downstream use.
+#' When \code{tpca_result$Info$pre_shape_embedding} is \code{NULL}, shapes are
+#' reconstructed via \code{kendall_tpca$reconstruct_shape_from_pca_coords}
+#' using the Fréchet mean and eigenvectors stored in \code{tpca_result$Info}.
+#' A message is emitted indicating how many PCs were used; fine morphological
+#' detail may be lost relative to the stored pre-shape path.
+#'
+#' All contours are Procrustes-aligned to the Fréchet mean via
+#' \code{kendall_tpca$reparam_OPA} before plotting.
+#'
+#' @seealso \code{\link{plot_mu_history}}, \code{\link{plot_frechet_convergence}}
+#'
 #' @export
 plot_csp_boundary_montage <- function(group_result,
                                       tpca_result,
@@ -219,14 +237,17 @@ plot_csp_boundary_montage <- function(group_result,
                                       pcs_to_use             = 1:10,
                                       norm_rescale           = FALSE,
                                       reconstruction_pcs     = NULL,
+                                      score_type             = c("CSP", "CEP"),
                                       line_colour            = "steelblue") {
+
+  score_type <- match.arg(score_type)
 
   kendall_tpca_py_dir <- system.file("python", package = "kstitch")
   kendall_tpca        <- reticulate::import_from_path("kendall_tpca", path = kendall_tpca_py_dir)
 
   info       <- tpca_result$Info
   mean_shape <- t(info$frechet_mean)   # 2 x L
-  emb        <- group_result$CSP_Scores
+  emb        <- if (score_type == "CSP") group_result$CSP_Scores else group_result$CEP_Scores
   shape_emb  <- tpca_result$TPCA_Embedding
   valid_idx  <- which(complete.cases(shape_emb))
   shape_emb  <- shape_emb[valid_idx, , drop = FALSE]
@@ -234,9 +255,11 @@ plot_csp_boundary_montage <- function(group_result,
   pre_shape          <- info$pre_shape_embedding   # cells x 2 x L, or NULL
   use_reconstruction <- is.null(pre_shape)
 
+  pcs_to_use <- pcs_to_use[pcs_to_use <= ncol(shape_emb)]
+
   if (use_reconstruction) {
-    k_rec <- if (is.null(reconstruction_pcs)) ncol(shape_emb) else
-      min(reconstruction_pcs, ncol(shape_emb))
+    k_rec <- if (is.null(reconstruction_pcs)) length(pcs_to_use) else
+      min(reconstruction_pcs, length(pcs_to_use))
     recon_msg <- sprintf(
       paste0("Pre-shape embedding not available \u2014 shapes reconstructed ",
              "from top %d PCA component%s. Fine morphological detail may be lost."),
@@ -255,20 +278,19 @@ plot_csp_boundary_montage <- function(group_result,
     norm_rescale <- FALSE
   }
 
-  # bin cells by CSP score
+  # bin cells by score
   cells_with_both <- intersect(rownames(emb), rownames(shape_emb))
-  csp_scores      <- emb[cells_with_both, cc_idx]
+  scores          <- emb[cells_with_both, cc_idx]
 
-  bin_labels <- paste0("CSP", cc_idx, " Bin ", seq_len(num_bins))
-  bin_vec    <- dplyr::ntile(csp_scores, num_bins)
+  bin_labels <- paste0("Bin ", seq_len(num_bins))
+  bin_vec    <- dplyr::ntile(scores, num_bins)
   bin_df     <- data.frame(
     cell  = cells_with_both,
-    score = csp_scores,
-    bin   = factor(paste0("CSP", cc_idx, " Bin ", bin_vec), levels = bin_labels)
+    score = scores,
+    bin   = factor(paste0("Bin ", bin_vec), levels = bin_labels)
   )
 
-  pcs_to_use <- pcs_to_use[pcs_to_use <= ncol(shape_emb)]
-  coord_df   <- data.frame()
+  coord_df <- data.frame()
 
   for (bin_ in levels(bin_df$bin)) {
 
@@ -286,7 +308,7 @@ plot_csp_boundary_montage <- function(group_result,
     for (cell in boundary_cells) {
 
       if (use_reconstruction) {
-        pca_coords <- shape_emb[cell, seq_len(k_rec)]
+        pca_coords <- shape_emb[cell, pcs_to_use[seq_len(k_rec)]]
         shape_mat  <- kendall_tpca$reconstruct_shape_from_pca_coords(
           pca_coords = reticulate::r_to_py(as.numeric(pca_coords)),
           v          = t(info$v_matrix),
@@ -321,7 +343,7 @@ plot_csp_boundary_montage <- function(group_result,
   }
 
   if (nrow(coord_df) == 0L)
-    stop("No coordinates assembled — check that CSP scores and TPCA embeddings share cell names.")
+    stop("No coordinates assembled — check that scores and TPCA embeddings share cell names.")
 
   coord_df$bin <- factor(coord_df$bin, levels = bin_labels)
 
@@ -329,31 +351,39 @@ plot_csp_boundary_montage <- function(group_result,
     paste0("Contour type: ", tpca_result$contour_type,
            if (norm_rescale) " \u2022 Frobenius norm-rescaled" else "")
 
+  n_cols <- min(num_bins, 5L)
+  lim <- max(abs(c(coord_df$x, coord_df$y)), na.rm = TRUE)
+
   p <- ggplot2::ggplot(
     coord_df,
     ggplot2::aes(x = x, y = y, group = cell)
   ) +
     ggplot2::geom_polygon(fill = NA, colour = line_colour, linewidth = 0.5) +
-    ggplot2::facet_wrap(~ bin, nrow = 1) +
-    ggplot2::coord_equal() +
+    ggplot2::facet_wrap(~ bin, ncol = n_cols) +
+   # ggplot2::coord_equal() +
     ggplot2::labs(
-      title    = paste0("CSP", cc_idx, " boundary montage"),
+      title    = paste0(score_type, cc_idx, " boundary montage"),
       subtitle = subtitle,
       x        = NULL,
       y        = NULL
     ) +
-    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme_minimal(base_size = 8) +
+    ggplot2::coord_cartesian(
+      xlim = c(-lim, lim),
+      ylim = c(-lim, lim),
+      expand = FALSE
+    ) +
     ggplot2::theme(
       axis.text  = ggplot2::element_blank(),
       axis.ticks = ggplot2::element_blank(),
       panel.grid = ggplot2::element_blank(),
-      strip.text = ggplot2::element_text(size = 8)
+      strip.text = ggplot2::element_text(size = 8),
+      aspect.ratio = 1
     )
 
   attr(p, "coord_data") <- coord_df
   p
 }
-
 #' Plot Fréchet mean shape history
 #'
 #' Visualises the evolution of the Fréchet mean shape across iterations of the

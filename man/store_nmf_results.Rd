@@ -7,8 +7,8 @@
 store_nmf_results(
   obj,
   nmf_result,
-  reduction_suffix = "all",
-  reduction_prefix = "nmf_",
+  reduction_suffix = NULL,
+  reduction_prefix = "nmf",
   reduction_key_prefix = "NMF"
 )
 }
@@ -19,10 +19,10 @@ store_nmf_results(
 
 \item{reduction_suffix}{Character. Appended to \code{reduction_prefix} to
 form the full reduction name, e.g. \code{"Keratinocytes"} →
-\code{"nmf_Keratinocytes"}. Default \code{"all"}.}
+\code{"nmf_Keratinocytes"}. Default \code{NULL}.}
 
 \item{reduction_prefix}{Character. Prefix for the reduction name.
-Default \code{"nmf_"}.}
+Default \code{"nmf"}.}
 
 \item{reduction_key_prefix}{Character. Key prefix passed to
 \code{Seurat::CreateDimReducObject()}. The suffix (with non-alphanumeric

@@ -2,7 +2,7 @@
 % Please edit documentation in R/figure_functions.r
 \name{plot_csp_boundary_montage}
 \alias{plot_csp_boundary_montage}
-\title{Plot CSP-binned cell boundary montage}
+\title{Boundary montage along a CSP or CEP axis}
 \usage{
 plot_csp_boundary_montage(
   group_result,
@@ -13,56 +13,75 @@ plot_csp_boundary_montage(
   pcs_to_use = 1:10,
   norm_rescale = FALSE,
   reconstruction_pcs = NULL,
+  score_type = c("CSP", "CEP"),
   line_colour = "steelblue"
 )
 }
 \arguments{
-\item{group_result}{A single group's entry from the list returned by
-\code{\link{link_shape_and_factors}}.}
+\item{group_result}{A kstitch group result object containing \code{CSP_Scores}
+and \code{CEP_Scores} matrices (cells x canonical variates).}
 
-\item{tpca_result}{A single group's TPCA result — i.e. one element of the
-named list returned by \code{\link{run_tpca}} or
-\code{\link{run_tpca_from_seurat}} (e.g. \code{tpca_result$all} or
-\code{tpca_result[["keratinocyte"]]}). Do not pass the top-level named
-list directly.}
+\item{tpca_result}{A kstitch TPCA result object containing \code{Info},
+\code{TPCA_Embedding}, and optionally \code{Metadata} and
+\code{contour_type}.}
 
-\item{cc_idx}{Integer. Which CSP component to use for binning. Default 1L.}
+\item{cc_idx}{Integer. Index of the canonical variate to bin cells by.
+Default \code{1L}.}
 
-\item{num_bins}{Integer. Number of bins. Default 10L.}
+\item{num_bins}{Integer. Number of quantile bins along the score axis.
+Default \code{10L}.}
 
-\item{num_cells_for_boundary}{Integer. Number of medoid cells to display
-per bin. Default 6L.}
+\item{num_cells_for_boundary}{Integer. Number of medoid cells to display per
+bin. Default \code{6L}.}
 
-\item{pcs_to_use}{Integer vector. Which shape PCs to use for medoid
-distance computation. Default \code{1:10}.}
+\item{pcs_to_use}{Integer vector. TPCA PCs used for medoid selection and,
+when reconstructing shapes, for shape reconstruction. PCs exceeding the
+embedding rank are silently dropped. Default \code{1:10}.}
 
-\item{reconstruction_pcs}{Integer. Number of PCA components to use for
-shape reconstruction when pre-shape embedding is unavailable.
-Default = all available.}
+\item{norm_rescale}{Logical. If \code{TRUE}, rescales each reconstructed or
+retrieved contour by the per-cell Frobenius norm stored in
+\code{tpca_result$Metadata$scale}, restoring approximate original contour
+size. Disabled with a message if the \code{scale} column is absent.
+Default \code{FALSE}.}
 
-\item{line_colour}{Character. Colour for contour outlines. Default
-\code{"steelblue"}.}
+\item{reconstruction_pcs}{Integer or \code{NULL}. When shapes are
+reconstructed (i.e. \code{pre_shape_embedding} is \code{NULL}), caps the
+number of PCs from \code{pcs_to_use} passed to
+\code{reconstruct_shape_from_pca_coords}. \code{NULL} uses all of
+\code{pcs_to_use}. Default \code{NULL}.}
 
-\item{area_rescale}{Logical. Rescale contours by \code{sqrt(area)} to
-reflect true cell size. Default \code{TRUE}.}
+\item{score_type}{Character. Which canonical variate scores to bin cells by.
+One of \code{"CSP"} (cell shape program) or \code{"CEP"} (cell expression
+program). Default \code{"CSP"}.}
+
+\item{line_colour}{Character. Colour passed to \code{geom_polygon} for
+contour outlines. Default \code{"steelblue"}.}
 }
 \value{
-A \code{ggplot} object. The underlying coordinate data frame is
-attached as attribute \code{"coord_data"} for downstream use.
+A \code{ggplot} object. The assembled coordinate data frame is
+attached as \code{attr(p, "coord_data")} with columns \code{x},
+\code{y}, \code{cell}, and \code{bin}.
 }
 \description{
-Bins cells by their CSP score into deciles, selects bin medoids (cells with
-smallest mean pairwise TPCA distance), Procrustes-aligns their contours to
-the Fréchet mean, and plots them as a montage faceted by bin.
+Bins cells by their score on a chosen canonical variate (CSP or CEP),
+selects medoid cells within each bin, and plots their Procrustes-aligned
+contours in a faceted montage. When the pre-shape embedding is unavailable,
+shapes are reconstructed from TPCA PCA coordinates.
 }
 \details{
-When \code{area_rescale = TRUE} (default), normalised contours are rescaled
-by \code{sqrt(area)} so the displayed size reflects true cell area. Area
-values are read from the \code{Metadata} element of \code{tpca_result},
-which is returned directly by \code{\link{run_tpca}} and
-\code{\link{run_tpca_from_seurat}} — no disk access is required.
+Medoid cells are identified as those with the smallest mean pairwise
+Euclidean distance to other cells in the same bin, computed in the subspace
+defined by \code{pcs_to_use}.
 
-If the pre-shape embedding is not available in \code{tpca_result}, shapes
-are reconstructed from the top \code{reconstruction_pcs} PCA components.
-This is clearly flagged in the plot subtitle and via an R message.
+When \code{tpca_result$Info$pre_shape_embedding} is \code{NULL}, shapes are
+reconstructed via \code{kendall_tpca$reconstruct_shape_from_pca_coords}
+using the Fréchet mean and eigenvectors stored in \code{tpca_result$Info}.
+A message is emitted indicating how many PCs were used; fine morphological
+detail may be lost relative to the stored pre-shape path.
+
+All contours are Procrustes-aligned to the Fréchet mean via
+\code{kendall_tpca$reparam_OPA} before plotting.
+}
+\seealso{
+\code{\link{plot_mu_history}}, \code{\link{plot_frechet_convergence}}
 }

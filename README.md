@@ -1,4 +1,4 @@
-# kstitch <img src="man/figures/logo.png" align="right" height="139" alt="" />
+# kstitch <img src="man/figures/logo.png" align="right" height="139" alt="kstitch logo" />
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml)
@@ -6,96 +6,99 @@
 [![CRAN status](https://www.r-pkg.org/badges/version/kstitch)](https://CRAN.R-project.org/package=kstitch)
 <!-- badges: end -->
 
-**kstitch** integrates cell and nucleus **morphology** with **gene expression**
-in spatial transcriptomics data. It works with Seurat v5 objects from Xenium
-and CosMx platforms, stitching together shape and molecular information via
-Tangent PCA (TPCA) and canonical correlation analysis (CCA).
+**kstitch** is a framework for identifying interpretable covariation between cell or nuclear morphology and gene expression in imaging-based spatial transcriptomics data.
+
+The package is designed to work with Seurat v5 objects and boundary data from platforms such as Xenium and CosMx. It represents contour shape using tangent principal component analysis (TPCA), models gene-expression programs using non-negative matrix factorization (NMF), and links the two modalities using canonical correlation analysis (CCA).
+
+## Get started
+
+See the **[complete Xenium workflow](https://vishakagopalan.github.io/kstitch/articles/kstitch-xenium.html)** for installation details, data download and extraction paths, NMF, cell and nuclear TPCA, covariate regression, CCA, and visualization.
+
+After installing the package, the same vignette can be opened from R:
+
+```r
+vignette("kstitch-xenium", package = "kstitch")
+```
+
+The workflow is:
+
+```text
+Xenium output directory
+        ↓
+Load expression and boundary data
+        ↓
+NMF expression factors
+        +
+TPCA contour features and area
+        ↓
+Optional covariate regression
+        ↓
+CCA
+        ↓
+CSP/CEP loadings and boundary montages
+```
 
 ---
 
 ## Overview
 
-Spatial transcriptomics captures where genes are expressed, but cell
-morphology — how a cell looks — carries independent biological information.
-kstitch links these two modalities by:
+Imaging-based spatial transcriptomics provides paired measurements of gene expression and cell or nuclear boundaries. kstitch analyzes these data in three main steps:
 
-1. **TPCA** — computing principal geodesic components of cell/nucleus contour
-   polygons in Kendall shape space (via a Python backend, `PGA.py`).
-2. **NMF** — factorising gene expression counts into interpretable latent
-   factors via `rliger`.
-3. **CCA** — finding linear combinations of shape PCs and NMF factors that are
-   maximally correlated, revealing axes of joint morpho-molecular variation.
+1. **TPCA** — represents cell or nuclear boundary contours in Kendall shape space after removing translation, rotation, reflection, cyclic starting-point differences, and scale. TPCA then provides a low-dimensional Euclidean approximation of the dominant modes of contour-shape variation.
+2. **NMF** — factorizes gene-expression count matrices into interpretable latent expression programs using `rliger`.
+3. **CCA** — identifies linear combinations of area-augmented TPCA features and NMF factors whose cell-level projection scores are maximally correlated.
 
-Results live inside the Seurat object and are visualised with four standard
-figure functions.
+Before CCA, kstitch can regress technical covariates from the morphology and expression representations. Depending on the dataset, these may include total RNA count, distance from the field-of-view edge, sample or slide identity, and segmentation-related covariates.
+
+The resulting canonical shape projections (CSPs), canonical expression projections (CEPs), and loading vectors can be stored in a Seurat object and visualized with the package plotting functions.
 
 ---
 
 ## Installation
 
 ```r
-# Install from GitHub (requires remotes)
+# Install from GitHub
 remotes::install_github("vishakagopalan/kstitch")
 ```
 
-kstitch requires Python for the TPCA step. Python dependencies are provisioned
-automatically via `reticulate` (using an ephemeral `uv` virtualenv) when the
-package is loaded — no manual Python setup is needed.
+kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`.
 
 ```r
 library(kstitch)
+library(Seurat)
 ```
 
 ---
 
-## Quick start
+## Main outputs
 
-```r
-library(kstitch)
+For each analyzed cell population, kstitch can return:
 
-# --- 1. Run TPCA on boundary parquet files ---
-tpca_cell <- run_tpca(
-  boundary_parquet_path = "cell_boundaries.parquet",
-  output_dir            = "output/tpca_cell",
-  contour_type          = "cell"
-)
-obj <- store_tpca_results(obj, tpca_cell)
-
-# --- 2. Run NMF ---
-nmf_results <- compute_nmf(obj, assay_name = "Xenium", group.by = "cell_type")
-
-# --- 3. Link shape and expression via CCA ---
-cca_results <- link_shape_and_factors(
-  obj        = obj,
-  expr_mat    = nmf_results$Keratinocytes$NMF_Matrix,
-  shape_mat  = Seurat::Embeddings(obj, "tpca_cell"),
-  group.by   = "cell_type"
-)
-obj <- store_kstitch_results(obj, cca_results)
-
-# --- 4. Visualise ---
-grp <- get_kstitch_results(obj, "Keratinocytes")
-
-plot_shape_modes(tpca_cell)
-plot_csp_loadings(grp, cc_idx = 1)
-plot_cep_loadings(grp, cc_idx = 1)
-plot_csp_boundary_montage(grp, tpca_cell, cc_idx = 1)
-```
-
-For a full walkthrough see `vignette("kstitch-xenium")`.
+- **Shape PC scores** describing size-independent contour variation.
+- **Cell or nuclear area** stored separately from shape.
+- **NMF factor scores and gene weights** describing expression programs.
+- **Canonical shape projections (CSPs)** and their morphology coefficients.
+- **Canonical expression projections (CEPs)** and their expression-factor coefficients.
+- **Canonical correlations** describing the strength of association between paired CSPs and CEPs.
 
 ---
 
 ## Function reference
 
 | Family | Functions |
-|--------|-----------|
-| **TPCA** | `run_tpca()`, `store_tpca_results()`, `get_tpca_results()` |
-| **NMF** | `compute_nmf()` |
+|---|---|
+| **TPCA** | `run_tpca()`, `run_tpca_from_seurat()`, `store_tpca_results()`, `get_tpca_results()` |
+| **NMF** | `compute_nmf()`, `store_nmf_results()` |
 | **CCA** | `run_cca()`, `cca_pvalues()`, `link_shape_and_factors()` |
 | **CCA helpers** | `anchor_cca_signs()`, `prioritize_cca_components()` |
 | **Storage** | `store_kstitch_results()`, `get_kstitch_results()` |
-| **Figures** | `plot_shape_modes()`, `plot_csp_loadings()`, `plot_cep_loadings()`, `plot_csp_boundary_montage()` |
+| **Figures** | `plot_shape_modes()`, `plot_mu_history()`, `plot_frechet_convergence()`, `plot_csp_loadings()`, `plot_cep_loadings()`, `plot_csp_boundary_montage()` |
+
+---
+
+## Software authors
+
+**Vishaka Gopalan** and **Shashwat Kumar** are co-authors of the kstitch software.
 
 ---
 
@@ -103,11 +106,10 @@ For a full walkthrough see `vignette("kstitch-xenium")`.
 
 If you use kstitch in your research, please cite:
 
-> Gopalan V. et al. (2025). kstitch: integrating cell morphology and gene
-> expression in spatial transcriptomics. *In preparation.*
+> Kumar S, Shi Y, Vallius T, Day C-P, Absil P-A, Srivastava A, Hannenhalli S, Gopalan V. **kstitch links cellular morphology and gene expression in spatial transcriptomics.** bioRxiv (2026). https://doi.org/10.64898/2026.06.07.730714
 
 ---
 
 ## License
 
-MIT © Vishaka Gopalan
+MIT © Vishaka Gopalan and Shashwat Kumar

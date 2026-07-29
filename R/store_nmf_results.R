@@ -21,9 +21,9 @@
 #' @param nmf_result List as returned by \code{\link{compute_nmf}}.
 #' @param reduction_suffix Character. Appended to \code{reduction_prefix} to
 #'   form the full reduction name, e.g. \code{"Keratinocytes"} →
-#'   \code{"nmf_Keratinocytes"}. Default \code{"all"}.
+#'   \code{"nmf_Keratinocytes"}. Default \code{NULL}.
 #' @param reduction_prefix Character. Prefix for the reduction name.
-#'   Default \code{"nmf_"}.
+#'   Default \code{"nmf"}.
 #' @param reduction_key_prefix Character. Key prefix passed to
 #'   \code{Seurat::CreateDimReducObject()}. The suffix (with non-alphanumeric
 #'   characters removed) is appended to keep keys unique across groups, e.g.
@@ -34,8 +34,8 @@
 #' @export
 store_nmf_results <- function(obj,
                               nmf_result,
-                              reduction_suffix     = "all",
-                              reduction_prefix     = "nmf_",
+                              reduction_suffix     = NULL,
+                              reduction_prefix     = "nmf",
                               reduction_key_prefix = "NMF") {
 
   if (is.null(nmf_result$NMF_Matrix)) {
@@ -64,7 +64,14 @@ store_nmf_results <- function(obj,
     emb <- emb[intersect(obj_cells, rownames(emb)), , drop = FALSE]
   }
 
-  reduction_name <- paste0(reduction_prefix, reduction_suffix)
+  if (!is.null(reduction_suffix)) {
+    reduction_name <- paste(reduction_prefix, reduction_suffix, sep = "_")
+    safe_suffix    <- gsub("[^A-Za-z0-9]", "", reduction_suffix)
+    reduction_key  <- paste0(reduction_key_prefix, safe_suffix, "_")
+  } else {
+    reduction_name <- reduction_prefix
+    reduction_key  <- paste0(reduction_key_prefix, "_")
+  }
   safe_suffix    <- gsub("[^A-Za-z0-9]", "", reduction_suffix)
   reduction_key  <- paste0(reduction_key_prefix, safe_suffix, "_")
 
