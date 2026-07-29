@@ -1,43 +1,18 @@
-url: https://vishakagopalan.github.io/kstitch
-
-template:
-  bootstrap: 5
-  bootswatch: flatly
-
-home:
-  title: "kstitch — morphology meets gene expression"
-  description: >
-    An R package for integrating cell and nucleus morphology with gene
-    expression in spatial transcriptomics data.
-
-navbar:
-  structure:
-    left:  [intro, reference, articles]
-    right: [github]
-  components:
-    github:
-      icon: fab fa-github
-      href: https://github.com/vishakagopalan/kstitch
-
-articles:
-  - title: "Vignettes"
-    navbar: ~
-    contents:
-      - kstitch-xenium
-
 reference:
   - title: "TPCA — Tangent PCA"
     desc: "Run and store Principal Geodesic Analysis on cell/nucleus contours."
     contents:
       - run_tpca
+      - run_tpca_from_seurat
       - store_tpca_results
       - get_tpca_results
-
+      - load_kstitch_results
   - title: "NMF — Non-negative Matrix Factorisation"
     desc: "Run rliger NMF factorisation per group."
     contents:
       - compute_nmf
-
+      - get_nmf_results
+      - store_nmf_results
   - title: "CCA — Canonical Correlation Analysis"
     desc: "Link shape and expression embeddings via CCA."
     contents:
@@ -46,13 +21,11 @@ reference:
       - link_shape_and_factors
       - anchor_cca_signs
       - prioritize_cca_components
-
   - title: "Storage"
     desc: "Store and retrieve kstitch results inside Seurat objects."
     contents:
       - store_kstitch_results
       - get_kstitch_results
-
   - title: "Figures"
     desc: "Standard kstitch output figures."
     contents:
@@ -60,3 +33,5 @@ reference:
       - plot_csp_loadings
       - plot_cep_loadings
       - plot_csp_boundary_montage
+      - plot_frechet_convergence
+      - plot_mu_history
