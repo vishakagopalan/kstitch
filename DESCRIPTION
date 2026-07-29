@@ -1,34 +1,41 @@
 Package: kstitch
-Title: What the Package Does (One Line, Title Case)
+Title: Integrating Cell Morphology and Gene Expression in Spatial Transcriptomics
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    c(person("Vishaka", "Gopalan", role = c("aut", "cre"),
+             email = "vishaka.gopalan@nih.gov"),
+      person("Shashwat", "Kumar", role = "aut"))
+Description: A framework for identifying interpretable covariation between cell
+    or nuclear morphology and gene expression in imaging-based spatial
+    transcriptomics data. Represents contour shape using tangent principal
+    component analysis (TPCA) in Kendall shape space, models gene-expression
+    programs using non-negative matrix factorization (NMF), and links the two
+    modalities using canonical correlation analysis (CCA). Designed to work
+    with Seurat v5 objects and boundary data from platforms such as Xenium
+    and CosMx.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Imports: 
-    Seurat (>= 5.0.0),
-    SeuratObject (>= 5.0.0),
-    rliger (>= 2.0.0),
-    reticulate (>= 1.35.0),
-    Matrix (>= 1.6.0),
-    readr (>= 2.1.0),
-    dplyr (>= 1.1.0),
-    tidyr (>= 1.3.0),
-    tibble (>= 3.2.0),
-    ggplot2 (>= 3.4.0),
-    ggpubr (>= 0.6.0),
-    RANN (>= 2.6.0),
+SystemRequirements: rhdf5 (>= 2.44.0, from Bioconductor)
+Imports:
     arrow (>= 12.0.0),
     cluster (>= 2.1.0),
-    withr (>= 2.5.0),
-    rhdf5
-    methods
-URL: https://github.com/vishakagopalan/kstitch
-BugReports: https://github.com/vishakagopalan/kstitch/issues
-Suggests: 
+    dplyr (>= 1.1.0),
+    ggplot2 (>= 3.4.0),
+    ggpubr (>= 0.6.0),
+    Matrix (>= 1.6.0),
+    methods,
+    RANN (>= 2.6.0),
+    readr (>= 2.1.0),
+    reticulate (>= 1.35.0),
+    rliger (>= 2.0.0),
+    Seurat (>= 5.0.0),
+    SeuratObject (>= 5.0.0),
+    tibble (>= 3.2.0),
+    tidyr (>= 1.3.0),
+    withr (>= 2.5.0)
+Suggests:
     knitr,
     lme4,
     mockery,
@@ -37,6 +44,8 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
+URL: https://github.com/vishakagopalan/kstitch
+BugReports: https://github.com/vishakagopalan/kstitch/issues
 Config/reticulate:
   list(
     packages = list(
