@@ -3,7 +3,6 @@
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CRAN status](https://www.r-pkg.org/badges/version/kstitch)](https://CRAN.R-project.org/package=kstitch)
 <!-- badges: end -->
 
 **kstitch** is a framework for identifying interpretable covariation between cell or nuclear morphology and gene expression in imaging-based spatial transcriptomics data.
@@ -59,14 +58,30 @@ The resulting canonical shape projections (CSPs), canonical expression projectio
 ```r
 # Install from GitHub
 remotes::install_github("vishakagopalan/kstitch")
+
+# or
+devtools::install_github("vishakagopalan/kstitch")
 ```
 
-kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`. Functions in the vignette demonstrate the use of Seurat
-for visualizing results obtained via kstitch. 
+kstitch depends on `rhdf5`, which is available from Bioconductor and must be installed separately:
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("rhdf5")
+```
+
+kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`. Functions in the vignette demonstrate the use of Seurat for visualizing results obtained via kstitch.
 
 ```r
 library(kstitch)
 library(Seurat)
+```
+
+To verify that the full pipeline runs in your environment:
+
+```r
+devtools::build_vignettes("kstitch")
 ```
 
 ---
@@ -88,10 +103,9 @@ For each analyzed cell population, kstitch can return:
 
 | Family | Functions |
 |---|---|
-| **TPCA** | `run_tpca()`, `run_tpca_from_seurat()`, `store_tpca_results()`, `get_tpca_results()` |
-| **NMF** | `compute_nmf()`, `store_nmf_results()` |
-| **CCA** | `run_cca()`, `cca_pvalues()`, `link_shape_and_factors()` |
-| **CCA helpers** | `anchor_cca_signs()`, `prioritize_cca_components()` |
+| **TPCA** | `run_tpca()`, `run_tpca_from_seurat()`, `store_tpca_results()`, `get_tpca_results()`, `load_kstitch_results()` |
+| **NMF** | `compute_nmf()`, `store_nmf_results()`, `get_nmf_results()` |
+| **CCA** | `run_cca()`, `cca_pvalues()`, `link_shape_and_factors()`, `anchor_cca_signs()` |
 | **Storage** | `store_kstitch_results()`, `get_kstitch_results()` |
 | **Figures** | `plot_shape_modes()`, `plot_mu_history()`, `plot_frechet_convergence()`, `plot_csp_loadings()`, `plot_cep_loadings()`, `plot_csp_boundary_montage()` |
 
