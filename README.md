@@ -1,4 +1,4 @@
-# kstitch <img src="man/figures/logo.png" align="right" height="139" alt="kstitch logo" />
+# kstitch 
 
 <!-- badges: start -->
 [![R-CMD-check](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/vishakagopalan/kstitch/actions/workflows/R-CMD-check.yaml)
@@ -61,7 +61,8 @@ The resulting canonical shape projections (CSPs), canonical expression projectio
 remotes::install_github("vishakagopalan/kstitch")
 ```
 
-kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`.
+kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`. Functions in the vignette demonstrate the use of Seurat
+for visualizing results obtained via kstitch. 
 
 ```r
 library(kstitch)
