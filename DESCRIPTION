@@ -23,11 +23,13 @@ Imports:
     tibble,
     tidyr,
     rhdf5,
+    SeuratObject,
     mockery
 URL: https://github.com/vishakagopalan/kstitch
 BugReports: https://github.com/vishakagopalan/kstitch/issues
 Suggests: 
     knitr,
+    lme4,
     rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

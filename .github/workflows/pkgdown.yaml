@@ -17,6 +17,14 @@ jobs:
         with:
           extra-packages: pkgdown
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install numpy h5py shapely scipy pandas pyarrow multiprocess
+
       - name: Build site
         run: Rscript -e 'pkgdown::build_site()'
 
