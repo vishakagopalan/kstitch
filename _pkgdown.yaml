@@ -20,7 +20,6 @@ reference:
       - cca_pvalues
       - link_shape_and_factors
       - anchor_cca_signs
-      - prioritize_cca_components
   - title: "Storage"
     desc: "Store and retrieve kstitch results inside Seurat objects."
     contents:
