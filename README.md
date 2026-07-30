@@ -75,7 +75,9 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("rhdf5")
 ```
 
-kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch, and will be installed automatically on first use. If you encounter issues, install them manually into the reticulate virtualenv:
+kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch. Required Python packages are declared via `py_require()` and will be installed automatically when Python is first initialized. In most cases no manual action is needed.
+
+If you encounter issues with Python dependencies, you can install them manually:
 
 ```r
 reticulate::virtualenv_install("r-reticulate",
