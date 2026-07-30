@@ -55,24 +55,20 @@ The resulting canonical shape projections (CSPs), canonical expression projectio
 
 ## Installation
 
-First, install `remotes` if you don't have it:
-
-```r
-install.packages("remotes")
-```
-
-Then install kstitch from GitHub:
-
-```r
-remotes::install_github("vishakagopalan/kstitch")
-```
-
-kstitch depends on `rhdf5` and `HDF5Array`, which are available from Bioconductor and must be installed separately:
+**Step 1.** Install Bioconductor dependencies first:
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 BiocManager::install(c("rhdf5", "HDF5Array"))
+```
+
+**Step 2.** Install kstitch from GitHub:
+
+```r
+if (!requireNamespace("remotes", quietly = TRUE))
+    install.packages("remotes")
+remotes::install_github("vishakagopalan/kstitch")
 ```
 
 kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch. Required Python packages are declared via `py_require()` and will be installed automatically when Python is first initialized. In most cases no manual action is needed.
