@@ -28,7 +28,7 @@ Imports:
     methods,
     RANN (>= 2.6.0),
     readr (>= 2.1.0),
-    reticulate (>= 1.35.0),
+    reticulate (>= 1.40.0),
     rliger (>= 2.0.0),
     Seurat (>= 5.0.0),
     SeuratObject (>= 5.0.0),

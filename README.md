@@ -77,20 +77,12 @@ BiocManager::install(c("rhdf5", "HDF5Array"))
 
 kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch. Required Python packages are declared via `py_require()` and will be installed automatically when Python is first initialized. In most cases no manual action is needed.
 
-If you encounter issues with Python dependencies, you can install them manually:
+If you encounter "No module named" errors, run this before loading kstitch:
 
 ```r
-reticulate::virtualenv_install("r-reticulate",
-  packages = c(
-    "h5py>=3.16.0",
-    "numpy>=2.5.1",
-    "pandas>=3.0.3",
-    "pyarrow>=25.0.0",
-    "scipy>=1.18.0",
-    "shapely>=2.1.2",
-    "multiprocess>=0.70.19"
-  )
-)
+reticulate::py_require(c(
+  "numpy", "scipy", "shapely", "pyarrow", "h5py", "multiprocess", "pandas"
+))
 ```
 
 **macOS users** may also need to install [Pandoc](https://pandoc.org/installing.html) and [XQuartz](https://www.xquartz.org/) before building vignettes.
