@@ -75,17 +75,33 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("rhdf5")
 ```
 
-kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`. Functions in the vignette demonstrate the use of Seurat for visualizing results obtained via kstitch.
+kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch, and will be installed automatically on first use. If you encounter issues, install them manually into the reticulate virtualenv:
 
 ```r
-library(kstitch)
-library(Seurat)
+reticulate::virtualenv_install("r-reticulate",
+  packages = c(
+    "h5py>=3.16.0",
+    "numpy>=2.5.1",
+    "pandas>=3.0.3",
+    "pyarrow>=25.0.0",
+    "scipy>=1.18.0",
+    "shapely>=2.1.2",
+    "multiprocess>=0.70.19"
+  )
+)
 ```
 
-To access the vignette, reinstall with vignettes and open the Xenium workflow:
+**macOS users** may also need to install [Pandoc](https://pandoc.org/installing.html) and [XQuartz](https://www.xquartz.org/) before building vignettes.
+
+To access the vignette:
 
 ```r
-remotes::install_github("vishakagopalan/kstitch", build_vignettes = TRUE)
+remotes::install_github(
+  "vishakagopalan/kstitch",
+  build_vignettes = TRUE,
+  force = TRUE,
+  upgrade = "never"
+)
 vignette("kstitch-xenium", package = "kstitch")
 ```
 
