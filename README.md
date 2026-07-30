@@ -67,12 +67,12 @@ Then install kstitch from GitHub:
 remotes::install_github("vishakagopalan/kstitch")
 ```
 
-kstitch depends on `rhdf5`, which is available from Bioconductor and must be installed separately:
+kstitch depends on `rhdf5` and `HDF5Array`, which are available from Bioconductor and must be installed separately:
 
 ```r
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
-BiocManager::install("rhdf5")
+BiocManager::install(c("rhdf5", "HDF5Array"))
 ```
 
 kstitch uses a Python backend for TPCA. Python dependencies are managed through `reticulate`, which is installed automatically with kstitch. Required Python packages are declared via `py_require()` and will be installed automatically when Python is first initialized. In most cases no manual action is needed.
