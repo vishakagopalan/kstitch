@@ -1,6 +1,6 @@
 Package: kstitch
 Title: Integrating Cell Morphology and Gene Expression in Spatial Transcriptomics
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     c(person("Vishaka", "Gopalan", role = c("aut", "cre"),
              email = "vishaka.gopalan@nih.gov"),

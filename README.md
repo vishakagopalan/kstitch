@@ -55,12 +55,16 @@ The resulting canonical shape projections (CSPs), canonical expression projectio
 
 ## Installation
 
-```r
-# Install from GitHub
-remotes::install_github("vishakagopalan/kstitch")
+First, install `remotes` if you don't have it:
 
-# or
-devtools::install_github("vishakagopalan/kstitch")
+```r
+install.packages("remotes")
+```
+
+Then install kstitch from GitHub:
+
+```r
+remotes::install_github("vishakagopalan/kstitch")
 ```
 
 kstitch depends on `rhdf5`, which is available from Bioconductor and must be installed separately:
@@ -78,10 +82,11 @@ library(kstitch)
 library(Seurat)
 ```
 
-To verify that the full pipeline runs in your environment:
+To verify that the full pipeline runs in your environment, reinstall with vignettes and open the Xenium workflow:
 
 ```r
-devtools::build_vignettes("kstitch")
+remotes::install_github("vishakagopalan/kstitch", build_vignettes = TRUE)
+vignette("kstitch-xenium", package = "kstitch")
 ```
 
 ---
