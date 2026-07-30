@@ -82,12 +82,14 @@ library(kstitch)
 library(Seurat)
 ```
 
-To verify that the full pipeline runs in your environment, reinstall with vignettes and open the Xenium workflow:
+To access the vignette, reinstall with vignettes and open the Xenium workflow:
 
 ```r
 remotes::install_github("vishakagopalan/kstitch", build_vignettes = TRUE)
 vignette("kstitch-xenium", package = "kstitch")
 ```
+
+Alternatively, the vignette is always available at the [kstitch documentation site](https://vishakagopalan.github.io/kstitch/articles/kstitch-xenium.html) without any additional installation steps.
 
 ---
 
