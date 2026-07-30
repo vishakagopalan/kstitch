@@ -1,5 +1,5 @@
 Package: kstitch
-Title: Integrating Cell Morphology and Gene Expression in Spatial Transcriptomics
+Title: Finding Covariation Between Cell Morphology and Gene Expression in Spatial Transcriptomics
 Version: 0.1.0
 Authors@R: 
     c(person("Vishaka", "Gopalan", role = c("aut", "cre"),
